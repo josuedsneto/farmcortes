@@ -67,6 +67,51 @@ O comando só renderiza; não publica.
 O modelo de voz deve existir em
 `data/models/pt_BR-edresson-low.onnx` (com o JSON de configuração ao lado).
 
+## Modo Bíblia: leitura da Bíblia em Shorts
+
+Gera um Short vertical por execução com a leitura sequencial da Bíblia (plano
+"Leia a Bíblia Toda em Um Ano", trazido do projeto Biblia). Usa o mesmo canal,
+o mesmo token e a mesma fila de revisão dos cortes:
+
+1. A fila de versículos fica no SQLite (`biblia_verses`). Na primeira execução
+   `dados-iniciais/biblia/versiculos.csv` é importado uma vez, com o estado de
+   publicação por plataforma (YouTube, TikTok, Facebook, Instagram).
+2. O texto (Almeida Corrigida Fiel) vem da API Pesquisar na Bíblia, um capítulo
+   por chamada, e fica guardado no banco.
+3. Versículos seguidos se juntam até ~57 s de narração; um versículo longo vira
+   partes de no máximo 60 s, uma por execução, com "Parte X/N" no título e na tela.
+4. Narração Piper, fundo do Pexels (reserva: Pixabay; sem chave: fundo liso),
+   música opcional do Jamendo e render FFmpeg 1080x1920. Os créditos da imagem e
+   da música entram na descrição. Os arquivos temporários são apagados após o
+   render; o MP4 é apagado depois de publicado em todas as plataformas ligadas.
+5. Títulos e descrição por IA (Groq; Gemini de reserva), com cache na tabela
+   `ai_cache`. Sem chave, ou se a IA falhar, usa títulos de modelo, então a
+   execução não falha por causa da IA.
+6. O vídeo entra em `review_queue` com `kind='biblia'` e categoria `Bíblia`
+   (prévia no Telegram marcada com `[BÍBLIA]`; `GET /api/review?kind=biblia`
+   filtra só esses itens).
+
+Nada é publicado sem aprovação. A aprovação vem de uma pessoa (Telegram ou
+`POST /api/review`) ou, só para itens da Bíblia, de
+`FARMCORTES_BIBLIA_AUTO_APPROVE=true` (desligado por padrão), que aprova com o
+primeiro título. Depois de gerar o vídeo, a execução chama
+`review.publish_approved` apenas para itens da Bíblia (mesmos privacidade,
+token e `FARMCORTES_DAILY_UPLOAD_LIMIT` dos cortes; com privacidade `public` o
+vídeo é agendado no próximo horário livre de `FARMCORTES_YOUTUBE_SCHEDULE_TIMES`)
+e `review.publish_social`, que envia os itens aprovados para Facebook e
+Instagram Reels quando `FARMCORTES_META_ACCESS_TOKEN` e o ID da Page / conta
+estão definidos.
+
+```bash
+.venv/bin/python -m farmcortes.biblia run            # um vídeo (o que o timer roda)
+.venv/bin/python -m farmcortes.biblia import --csv dados-iniciais/biblia/versiculos.csv
+.venv/bin/python -m farmcortes.biblia insight --ordem 1   # roteiro + título/descrição teológicos de temas.csv
+```
+
+O timer `farmcortes-biblia.timer` roda às 08:00, 14:00 e 20:00 (horário de
+Brasília) com `Nice=10` e `CPUWeight=20`, para não atrasar os cortes. Variáveis
+em `.env.example`, seção "Modo Bíblia".
+
 ## Publicação no YouTube
 
 A publicação ocorre só depois de aprovação na fila de revisão (`review_queue`).
@@ -79,7 +124,8 @@ automaticamente.
 Configure `FARMCORTES_YOUTUBE_ENABLED=true`, `FARMCORTES_YOUTUBE_TOKEN` com o
 token OAuth renovável, `FARMCORTES_YOUTUBE_PRIVACY` (`private`, `unlisted` ou
 `public`) e `FARMCORTES_DAILY_UPLOAD_LIMIT`. Só são publicados itens de
-streamers aprovados em `data/streamers.json`.
+streamers aprovados em `data/streamers.json` (itens do modo Bíblia são conteúdo
+próprio e não dependem dessa lista).
 
 ## Varredura diária de fontes
 

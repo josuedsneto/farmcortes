@@ -8,8 +8,11 @@ Pacote gerado em 21/11/2026 a partir do commit 9038b07 (servidor atual: farmcort
   (systemd com os drop-ins `pause-publish.conf`, que hoje DESLIGAM a publicação no YouTube, e o nginx).
 - `dados-iniciais/`: banco SQLite atual (fila, revisão, descobertas; sem senhas) e `youtube-settings.json`.
 - `.env.example`: todas as variáveis que o código lê.
+- `dados-iniciais/biblia/`: `versiculos.csv` (fila do modo Bíblia, importada uma vez para o SQLite) e `temas.csv`.
 
 ## O que NÃO vem (por segurança ou tamanho)
+- Credenciais do projeto Biblia (`credentials/`, tokens, `.env`): não foram copiadas; o modo Bíblia publica pelo token
+  do Farmcortes. Chaves Pexels/Pixabay/Jamendo/Groq/Gemini/Meta vão só em `/etc/farmcortes.env`.
 - Credenciais: `data/secrets/` (token OAuth do YouTube, token do TikTok, token do worker local) e a senha do nginx
   (`/etc/nginx/.htpasswd-farmcortes`). No servidor novo: autorize o canal de novo pelo fluxo OAuth do app e crie
   outra senha com `htpasswd -c /etc/nginx/.htpasswd-farmcortes <usuario>`.
@@ -28,6 +31,12 @@ Pacote gerado em 21/11/2026 a partir do commit 9038b07 (servidor atual: farmcort
    `/etc/systemd/system/`, ajuste `User`, `WorkingDirectory` e caminhos, e:
    `sudo systemctl daemon-reload && sudo systemctl enable --now farmcortes farmcortes-discovery.timer farmcortes-compilations.timer`
    Os drop-ins `pause-publish.conf` deixam a publicação desligada; remova-os quando quiser publicar.
+   Modo Bíblia (opcional): copie também `deploy/farmcortes-biblia.service` e `.timer`, ponha as chaves em
+   `/etc/farmcortes.env` (chmod 600; lido via `EnvironmentFile=`; seção "Modo Bíblia" do `.env.example`) e rode
+   `sudo systemctl enable --now farmcortes-biblia.timer`. Teste uma vez com
+   `sudo systemctl start farmcortes-biblia.service && journalctl -u farmcortes-biblia -n 50`.
+   O item fica pendente na fila até ser aprovado, salvo com `FARMCORTES_BIBLIA_AUTO_APPROVE=true`.
+   Usa a mesma voz Piper e o mesmo token do YouTube; não há segundo OAuth nem Node/Remotion.
 8. nginx: use `deploy/producao-atual/nginx-farmcortes.conf` trocando o `server_name`, crie o `.htpasswd`
    e rode `sudo certbot --nginx -d <seu-dominio>`. `client_max_body_size 4G` e timeouts longos são necessários para upload.
 9. YouTube: crie o OAuth no Google Cloud (YouTube Data API v3), autorize pelo app e só então
