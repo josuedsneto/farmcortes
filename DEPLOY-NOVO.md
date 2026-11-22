@@ -38,9 +38,9 @@ Pacote gerado em 21/11/2026 a partir do commit 9038b07 (servidor atual: farmcort
    O item fica pendente na fila até ser aprovado, salvo com `FARMCORTES_BIBLIA_AUTO_APPROVE=true`.
    CTA do Bibliagram (não vai no git): copie os MP4 de `CTAvideos/` para `data/cta/` no servidor, por exemplo
    `scp CTAvideos/*.mp4 <usuario>@<vps>:/home/admin/.openclaw/workspace/farmcortes/data/cta/` (ou outra pasta em
-   `FARMCORTES_BIBLIA_CTA_DIR`, legível pelo usuário do serviço). Duplicatas idênticas são ignoradas; para aposentar
-   CTAs datados (ex.: teste fechado) use `FARMCORTES_BIBLIA_CTA_EXCLUDE=*testadores*,*como-funciona-o-teste*`
-   ou apague o arquivo. Sem a pasta, os vídeos saem sem CTA.
+   `FARMCORTES_BIBLIA_CTA_DIR`, legível pelo usuário do serviço). Duplicatas idênticas são ignoradas e os 7 clipes
+   entram no rodízio. `FARMCORTES_BIBLIA_CTA_EXCLUDE` fica vazio; só preencha (padrões de nome separados por
+   vírgula) ou apague o arquivo se um dia quiser aposentar um clipe. Sem a pasta, os vídeos saem sem CTA.
    Usa a mesma voz Piper e o mesmo token do YouTube; não há segundo OAuth nem Node/Remotion.
 8. nginx: use `deploy/producao-atual/nginx-farmcortes.conf` trocando o `server_name`, crie o `.htpasswd`
    e rode `sudo certbot --nginx -d <seu-dominio>`. `client_max_body_size 4G` e timeouts longos são necessários para upload.
