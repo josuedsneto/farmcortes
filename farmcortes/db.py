@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS biblia_verses (
     referencia TEXT,
     parts_total INTEGER,
     parts_done INTEGER NOT NULL DEFAULT 0,
+    part_budget REAL,
     published_youtube INTEGER NOT NULL DEFAULT 0,
     published_tiktok INTEGER NOT NULL DEFAULT 0,
     published_facebook INTEGER NOT NULL DEFAULT 0,
@@ -81,6 +82,13 @@ CREATE TABLE IF NOT EXISTS biblia_videos (
     review_id INTEGER NOT NULL,
     ordem INTEGER NOT NULL,
     PRIMARY KEY (review_id, ordem)
+);
+CREATE TABLE IF NOT EXISTS biblia_cta_uses (
+    review_id INTEGER PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    name TEXT NOT NULL,
+    duration REAL NOT NULL,
+    used_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS ai_cache (
     key TEXT PRIMARY KEY,
@@ -135,6 +143,9 @@ class Database:
                 conn.execute("ALTER TABLE jobs ADD COLUMN auto_publish INTEGER NOT NULL DEFAULT 1")
             if "publication_json" not in columns:
                 conn.execute("ALTER TABLE jobs ADD COLUMN publication_json TEXT NOT NULL DEFAULT '{}'")
+            verse_columns = {row["name"] for row in conn.execute("PRAGMA table_info(biblia_verses)").fetchall()}
+            if "part_budget" not in verse_columns:
+                conn.execute("ALTER TABLE biblia_verses ADD COLUMN part_budget REAL")
             if recover_interrupted:
                 conn.execute(
                     "UPDATE jobs SET status='queued', stage='Retomando processamento', progress=1 "

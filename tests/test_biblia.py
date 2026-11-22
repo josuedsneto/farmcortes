@@ -254,7 +254,7 @@ def test_run_once_enqueues_for_review_and_cleans_temp_files(tmp_path, monkeypatc
     monkeypatch.setattr(biblia, "background_image", fake_image)
     monkeypatch.setattr(biblia, "background_music", lambda data_dir: (None, ""))
 
-    def fake_render(image, narration, music, text, reference, label, output):
+    def fake_render(image, narration, music, text, reference, label, output, cta=None):
         output.with_suffix(".ass").write_text("x")
         output.write_bytes(b"mp4")
         return 12.0
@@ -453,3 +453,99 @@ def test_instagram_reel_flow_uploads_waits_and_publishes(tmp_path, monkeypatch):
     upload = next(c for c in calls if "rupload" in c[1])
     assert upload[2]["Authorization"] == "OAuth tok" and upload[2]["file_size"] == "10"
     assert [c[0] for c in calls].count("get") == 2 and calls[-1][1].endswith("/ig/media_publish")
+
+
+# ── Bibliagram CTA ───────────────────────────────────────────────────────────
+
+def make_ctas(folder, durations):
+    """Write fake clips; durations maps file name -> (seconds, content)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, (seconds, content) in durations.items():
+        (folder / name).write_bytes(content)
+    return {name: seconds for name, (seconds, _) in durations.items()}
+
+
+@pytest.fixture
+def cta_folder(tmp_path, monkeypatch):
+    from farmcortes import biblia_cta
+    folder = tmp_path / "cta"
+    lengths = make_ctas(folder, {
+        "a-anuncio.mp4": (6.0, b"a"),
+        "b-teste-fechado 2.mp4": (14.0, b"same"),
+        "b-teste-fechado 2 (1).mp4": (14.0, b"same"),
+        "c-biblia.mp4": (18.0, b"c"),
+    })
+    monkeypatch.setattr(biblia_cta, "probe", lambda path: {
+        "format": {"duration": str(lengths[path.name])}, "streams": [{"codec_type": "video"}, {"codec_type": "audio"}]})
+    monkeypatch.setenv("FARMCORTES_BIBLIA_CTA_DIR", str(folder))
+    monkeypatch.delenv("FARMCORTES_BIBLIA_CTA_EXCLUDE", raising=False)
+    return folder
+
+
+def test_cta_dedupes_identical_files_and_honours_exclude(cta_folder, monkeypatch):
+    from farmcortes import biblia_cta
+    assert [c.name for c in biblia_cta.available(cta_folder)] == ["a-anuncio.mp4", "b-teste-fechado 2 (1).mp4", "c-biblia.mp4"]
+    monkeypatch.setenv("FARMCORTES_BIBLIA_CTA_EXCLUDE", "*TESTE-FECHADO*, c-*")
+    assert [c.name for c in biblia_cta.available(cta_folder)] == ["a-anuncio.mp4"]
+
+
+def test_cta_rotates_least_recently_used(tmp_path, cta_folder):
+    from farmcortes import biblia_cta
+    db = Database(tmp_path / "db")
+    used = []
+    for review_id in range(1, 5):
+        cta = biblia.choose_cta(db, tmp_path)
+        biblia_cta.record_use(db, review_id, cta)
+        used.append(cta.name)
+    assert used == ["a-anuncio.mp4", "b-teste-fechado 2 (1).mp4", "c-biblia.mp4", "a-anuncio.mp4"]
+    with db.connect() as conn:
+        assert conn.execute("SELECT name FROM biblia_cta_uses WHERE review_id=2").fetchone()[0] == "b-teste-fechado 2 (1).mp4"
+
+
+def test_missing_or_empty_cta_folder_means_no_cta(tmp_path, monkeypatch):
+    db = Database(tmp_path / "db")
+    monkeypatch.setenv("FARMCORTES_BIBLIA_CTA_DIR", str(tmp_path / "nope"))
+    assert biblia.choose_cta(db, tmp_path) is None
+    (tmp_path / "empty").mkdir()
+    monkeypatch.setenv("FARMCORTES_BIBLIA_CTA_DIR", str(tmp_path / "empty"))
+    assert biblia.choose_cta(db, tmp_path) is None
+    monkeypatch.delenv("FARMCORTES_BIBLIA_CTA_DIR")
+    assert biblia.choose_cta(db, tmp_path) is None  # default data/cta does not exist
+
+
+def test_cta_length_comes_out_of_the_60_second_budget(tmp_path, cta_folder):
+    from farmcortes import biblia_cta
+    db = Database(tmp_path / "db")
+    biblia.import_csv(db, write_csv(tmp_path / "v.csv", [(i, "sl", 119, i, "false", "false", "false", "false") for i in range(1, 30)]))
+    fetch_texts = {119: {i: "palavra " * 20 for i in range(1, 30)}}
+    for review_id in range(1, 4):
+        cta = biblia.choose_cta(db, tmp_path)
+        plan = biblia.next_video(db, fetch=fake_fetch(fetch_texts), max_seconds=biblia.verse_budget(cta))
+        spoken = sum(biblia.estimate_seconds(v["texto"]) + biblia.VERSE_PAUSE for v in plan["verses"])
+        assert spoken + biblia.CTA_MARGIN + cta.duration <= biblia.MAX_VIDEO_SECONDS
+        biblia.record_video(db, plan, review_id)
+        biblia_cta.record_use(db, review_id, cta)
+    assert biblia.verse_budget(None) == biblia.PART_MAX_SECONDS
+    assert biblia.verse_budget(biblia_cta.Cta("x", "c", tmp_path, 18.0, True)) == pytest.approx(39.0)
+
+
+def test_split_verse_keeps_its_parts_when_the_cta_changes(tmp_path, cta_folder, monkeypatch):
+    from farmcortes import biblia_cta
+    db = Database(tmp_path / "db")
+    biblia.import_csv(db, write_csv(tmp_path / "v.csv", [(1, "et", 8, 9, "false", "false", "false", "false")]))
+    monkeypatch.setattr(biblia, "fetch_chapter", lambda livro, cap: ("Ester", {9: LONG}))
+    first, cta = biblia.plan_with_cta(db, tmp_path)  # 6 s CTA -> budget 51 s
+    assert cta.name == "a-anuncio.mp4" and first["budget"] == pytest.approx(51.0)
+    biblia.record_video(db, first, 1)
+    biblia_cta.record_use(db, 1, cta)
+    second, cta = biblia.plan_with_cta(db, tmp_path)  # next LRU (14 s) would shrink the budget
+    assert (second["part"], second["parts"]) == (2, first["parts"])
+    assert second["budget"] == first["budget"] and biblia.verse_budget(cta) >= second["budget"]
+
+
+def test_cta_adds_the_app_line_to_the_description(tmp_path, monkeypatch):
+    from farmcortes import biblia_cta
+    monkeypatch.setenv("FARMCORTES_BIBLIA_APP_URL", "https://bibliagram.app")
+    assert biblia_cta.description_line() == "📱 Conheça o Bibliagram: https://bibliagram.app"
+    monkeypatch.setenv("FARMCORTES_BIBLIA_APP_URL", "")
+    assert biblia_cta.description_line() == "📱 Conheça o Bibliagram"

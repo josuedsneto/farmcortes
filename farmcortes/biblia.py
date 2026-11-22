@@ -21,7 +21,7 @@ from pathlib import Path
 
 import requests
 
-from . import biblia_ai, review, telegram
+from . import biblia_ai, biblia_cta, review, telegram
 from .db import Database
 from .original import _escape_filter, synthesize, timed_captions
 from .pipeline import PipelineError, probe, run
@@ -34,7 +34,9 @@ THEMES_CSV = ROOT / "dados-iniciais" / "biblia" / "temas.csv"
 VERSES_API = "https://pesquisarnabiblia.com.br/api-projeto/api/get_verses.php"
 WORDS_PER_SECOND = 130 / 60  # Biblia's estimate for pt-BR narration
 PART_MAX_SECONDS = 57        # planning target; the rendered video is held to MAX_VIDEO_SECONDS
-MAX_VIDEO_SECONDS = 59.5
+MAX_VIDEO_SECONDS = 59.5      # whole video, CTA included
+CTA_MARGIN = 2.5              # planning slack between the word estimate and the real narration
+MIN_VERSE_BUDGET = 15         # below this a CTA is skipped rather than squeezing the reading
 VERSE_PAUSE = 0.5
 MUSIC_VOLUME = 0.15
 PEXELS_THEMES = [
@@ -188,10 +190,12 @@ def next_video(db: Database, fetch=None, max_seconds: float = PART_MAX_SECONDS) 
             first = _fill_text(conn, rows.pop(0), fetch)
         if first is None:
             return None
-        parts = split_parts(first["texto"], max_seconds)
+        in_progress = first["parts_done"] and first["part_budget"] and (first["parts_total"] or 0) > 1
+        budget = first["part_budget"] if in_progress else max_seconds
+        parts = split_parts(first["texto"], budget)
         if len(parts) > 1:
             done = first["parts_done"] if first["parts_total"] == len(parts) else 0
-            return {"verses": [first], "text": parts[done], "part": done + 1, "parts": len(parts),
+            return {"verses": [first], "text": parts[done], "part": done + 1, "parts": len(parts), "budget": budget,
                     "complete": [first["ordem"]] if done + 1 == len(parts) else []}
         verses, total = [first], estimate_seconds(first["texto"])
         for row in rows:
@@ -206,15 +210,15 @@ def next_video(db: Database, fetch=None, max_seconds: float = PART_MAX_SECONDS) 
             verses.append(row)
             total += seconds
     return {"verses": verses, "text": " ".join(v["texto"] for v in verses), "part": 1, "parts": 1,
-            "complete": [v["ordem"] for v in verses]}
+            "budget": max_seconds, "complete": [v["ordem"] for v in verses]}
 
 
 def record_video(db: Database, plan: dict, review_id: int) -> None:
     """Advance the queue after a video was enqueued; map fully covered verses to the review item."""
     with db.connect() as conn:
         for verse in plan["verses"]:
-            conn.execute("UPDATE biblia_verses SET parts_total=?,parts_done=? WHERE ordem=?",
-                         (plan["parts"], plan["part"], verse["ordem"]))
+            conn.execute("UPDATE biblia_verses SET parts_total=?,parts_done=?,part_budget=? WHERE ordem=?",
+                         (plan["parts"], plan["part"], plan.get("budget") if plan["parts"] > 1 else None, verse["ordem"]))
         conn.executemany("INSERT OR IGNORE INTO biblia_videos (review_id,ordem) VALUES (?,?)",
                          [(review_id, ordem) for ordem in plan["complete"]])
 
@@ -328,43 +332,71 @@ def write_subtitles(path: Path, text: str, reference: str, label: str, duration:
     path.write_text("".join(rows), encoding="utf-8")
 
 
-def render(image: Path, narration: Path, music: Path | None, text: str, reference: str, label: str, output: Path) -> float:
-    """FFmpeg render 1080x1920 at most MAX_VIDEO_SECONDS long; speeds narration up slightly if needed."""
+def render(image: Path, narration: Path, music: Path | None, text: str, reference: str, label: str, output: Path,
+           cta: "biblia_cta.Cta | None" = None) -> float:
+    """One FFmpeg pass: verse segment (captions, music) then the optional CTA clip, normalized to
+    1080x1920, 30 fps, SAR 1, 48 kHz stereo, -16 LUFS. The whole video stays within MAX_VIDEO_SECONDS;
+    the narration is sped up slightly if needed. Returns the total duration."""
     spoken = float(probe(narration).get("format", {}).get("duration") or 0)
     if spoken <= 0:
         raise PipelineError("A narração ficou vazia")
-    tempo = max(1.0, spoken / MAX_VIDEO_SECONDS)
+    verse_max = MAX_VIDEO_SECONDS - (cta.duration if cta else 0)
+    tempo = max(1.0, spoken / (verse_max - 0.6))
     if tempo > 1.3:
         raise PipelineError(f"Narração longa demais para um Short: {spoken:.1f}s")
-    duration = spoken / tempo + 0.6
+    verse = spoken / tempo + 0.6
     subtitle = output.with_suffix(".ass")
-    write_subtitles(subtitle, text, reference, label, duration)
+    write_subtitles(subtitle, text, reference, label, verse)
+    audio_out = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
     filters = (
         "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-        f"eq=brightness=-0.2:saturation=0.85,subtitles='{_escape_filter(subtitle)}'[v];"
+        f"eq=brightness=-0.2:saturation=0.85,subtitles='{_escape_filter(subtitle)}',fps=30,format=yuv420p,setsar=1[vv];"
         f"[1:a]atempo={tempo:.4f},apad=pad_dur=0.6,loudnorm=I=-16:LRA=9:TP=-1.5[n]"
     )
-    command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-loop", "1", "-i", str(image), "-i", str(narration)]
+    command = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+               "-loop", "1", "-framerate", "30", "-t", f"{verse:.3f}", "-i", str(image), "-i", str(narration)]
     if music:
         command += ["-stream_loop", "-1", "-i", str(music)]
-        filters += f";[2:a]volume={MUSIC_VOLUME}[m];[n][m]amix=inputs=2:duration=first:normalize=0[a]"
+        filters += f";[2:a]volume={MUSIC_VOLUME}[m];[n][m]amix=inputs=2:duration=first:normalize=0,{audio_out}[va]"
     else:
-        filters += ";[n]anull[a]"
+        filters += f";[n]{audio_out}[va]"
+    if cta:
+        index = 3 if music else 2
+        command += ["-i", str(cta.path)]
+        filters += (
+            f";[{index}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1,fps=30,format=yuv420p[cv]"
+        )
+        if cta.has_audio:
+            filters += f";[{index}:a]loudnorm=I=-16:LRA=9:TP=-1.5,{audio_out}[ca]"
+        else:
+            filters += f";anullsrc=r=48000:cl=stereo:d={cta.duration:.3f},{audio_out}[ca]"
+        filters += ";[vv][va][cv][ca]concat=n=2:v=1:a=1[v][a]"
+    else:
+        filters += ";[vv]null[v];[va]anull[a]"
     command += [
-        "-filter_complex", filters, "-map", "[v]", "-map", "[a]", "-t", f"{duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage", "-crf", "21", "-pix_fmt", "yuv420p", "-r", "30",
-        "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(output),
+        "-filter_complex", filters, "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p", "-r", "30",
+        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(output),
     ]
     run(command, timeout=1800)
-    video = next((s for s in probe(output).get("streams", []) if s.get("codec_type") == "video"), {})
+    info = probe(output)
+    video = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
     if video.get("width") != 1080 or video.get("height") != 1920:
         raise PipelineError("O vídeo da Bíblia não ficou em 1080x1920")
-    return duration
+    return float(info.get("format", {}).get("duration") or verse + (cta.duration if cta else 0))
+
+
+def verse_budget(cta: "biblia_cta.Cta | None") -> float:
+    """Planned narration seconds for the verse part, leaving room for the CTA inside 60 s."""
+    if not cta:
+        return PART_MAX_SECONDS
+    return min(PART_MAX_SECONDS, MAX_VIDEO_SECONDS - cta.duration - CTA_MARGIN)
 
 
 # ── run ──────────────────────────────────────────────────────────────────────
 
-def make_video(data_dir: Path, db: Database, plan: dict) -> int:
+def make_video(data_dir: Path, db: Database, plan: dict, cta: biblia_cta.Cta | None = None) -> int:
     """Render the planned video, enqueue it for review and clean the temporary files. Returns the review id."""
     first = plan["verses"][0]
     folder = data_dir / "biblia" / f"{first['ordem']:05d}-p{plan['part']}"
@@ -381,7 +413,7 @@ def make_video(data_dir: Path, db: Database, plan: dict) -> int:
         music, music_credit = background_music(data_dir)
         reference = biblia_ai.reference_range(plan["verses"])
         label = f"Parte {plan['part']}/{plan['parts']}" if plan["parts"] > 1 else ""
-        duration = render(folder / "background.jpg", folder / "narration.wav", music, plan["text"], reference, label, video)
+        duration = render(folder / "background.jpg", folder / "narration.wav", music, plan["text"], reference, label, video, cta)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise
@@ -397,11 +429,30 @@ def make_video(data_dir: Path, db: Database, plan: dict) -> int:
     item_id = review.enqueue(
         kind="biblia", streamer="biblia", platform="biblia", source_url=attribution.get("url", ""),
         file_path=video, duration=duration, category="Bíblia", titles=meta["titulos"],
-        description=meta["descricao"], hashtags="#Bíblia #LeiaABíblia #PalavraDeDeus #Shorts",
+        description="\n\n".join(filter(None, [meta["descricao"], biblia_cta.description_line() if cta else ""])), hashtags="#Bíblia #LeiaABíblia #PalavraDeDeus #Shorts",
         credit_text=credit, db=db,
     )
     record_video(db, plan, item_id)
+    if cta:
+        biblia_cta.record_use(db, item_id, cta)
     return item_id
+
+
+def choose_cta(db: Database, data_dir: Path) -> "biblia_cta.Cta | None":
+    """Least recently used CTA that still leaves a reasonable reading time; None when there is none."""
+    clips = biblia_cta.by_least_recent_use(db, biblia_cta.available(biblia_cta.cta_dir(data_dir)))
+    return next((c for c in clips if verse_budget(c) >= MIN_VERSE_BUDGET), None)
+
+
+def plan_with_cta(db: Database, data_dir: Path) -> tuple[dict | None, "biblia_cta.Cta | None"]:
+    """Pick the CTA first, then plan the verse part inside what is left of the 60 s."""
+    cta = choose_cta(db, data_dir)
+    plan = next_video(db, max_seconds=verse_budget(cta))
+    if plan and cta and plan["budget"] > verse_budget(cta):
+        # a long verse already split with a bigger budget: use a CTA that fits, or none
+        clips = biblia_cta.by_least_recent_use(db, biblia_cta.available(biblia_cta.cta_dir(data_dir)))
+        cta = next((c for c in clips if verse_budget(c) >= plan["budget"]), None)
+    return plan, cta
 
 
 def prune_published(db: Database, data_dir: Path) -> int:
@@ -429,13 +480,14 @@ def run_once(data_dir: Path, db: Database | None = None) -> dict:
     csv_path = Path(os.getenv("FARMCORTES_BIBLIA_CSV") or DEFAULT_CSV)
     if csv_path.is_file():
         import_csv(db, csv_path)
-    plan = next_video(db)
+    plan, cta = plan_with_cta(db, data_dir)
     result: dict = {"status": "idle"}
     if plan:
-        item_id = make_video(data_dir, db, plan)
+        item_id = make_video(data_dir, db, plan, cta)
         approved = review.auto_approve(item_id, db)
         result = {"status": "approved" if approved else "pending", "review_id": item_id,
-                  "reference": biblia_ai.reference_range(plan["verses"]), "part": plan["part"], "parts": plan["parts"]}
+                  "reference": biblia_ai.reference_range(plan["verses"]), "part": plan["part"], "parts": plan["parts"],
+                  "cta": cta.name if cta else None}
         if not approved:
             item = next(row for row in review.list_items(db, kind="biblia") if row["id"] == item_id)
             try:
