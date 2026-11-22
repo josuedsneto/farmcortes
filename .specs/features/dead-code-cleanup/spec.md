@@ -79,8 +79,8 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DEAD-01 | P1: Remover stubs (AC1) | Execute | Pending |
-| DEAD-02 | P1: Remover stubs (AC2) | Execute | Pending |
+| DEAD-01 | P1: Remover stubs (AC1) | Execute | Implementing |
+| DEAD-02 | P1: Remover stubs (AC2) | Execute | Implementing |
 | DEAD-03 | P1: Conversão única (AC1) | Execute | Pending |
 | DEAD-04 | P1: Conversão única (AC2) | Execute | Pending |
 | DEAD-05 | P1: Conversão única (AC3) | Execute | Pending |
