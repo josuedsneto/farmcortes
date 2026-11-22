@@ -98,11 +98,11 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PUB-01 | P1: Jobs sem publicar (AC1) | Execute | Pending |
-| PUB-02 | P1: Jobs sem publicar (AC2) | Execute | Pending |
-| PUB-03 | P1: Jobs sem publicar (AC3) | Execute | Pending |
+| PUB-01 | P1: Jobs sem publicar (AC1) | Execute | Implementing |
+| PUB-02 | P1: Jobs sem publicar (AC2) | Execute | Implementing |
+| PUB-03 | P1: Jobs sem publicar (AC3) | Execute | Implementing |
 | PUB-04 | P1: Único caminho (AC1) | Execute | Pending |
-| PUB-05 | P1: Único caminho (AC2) | Execute | Pending |
+| PUB-05 | P1: Único caminho (AC2) | Execute | Implementing |
 | PUB-06 | P1: Único caminho (AC3) | Execute | Pending |
 | PUB-07 | P1: Único caminho (AC4) | Execute | Pending |
 | PUB-08 | P1: Único caminho (AC5) | Execute | Pending |

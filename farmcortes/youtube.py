@@ -228,37 +228,6 @@ def metadata_for(job: dict, output: dict) -> dict:
     }
 
 
-def publish(job: dict, folder: Path, outputs: list[dict], *, reserved: set[str] | None = None) -> dict:
-    config = settings(folder.parent.parent)
-    if not config["enabled"]:
-        return {}
-    token = config["token"]
-    if not token.is_file():
-        raise RuntimeError("Token OAuth do YouTube não encontrado")
-    ranked = ranked_outputs(outputs)
-    slots = schedule_slots(
-        len(ranked), config["schedule_times"], config["timezone"], reserved=reserved,
-    )
-    publications = []
-    for index, output in enumerate(ranked):
-        video = (folder / output["file"]).resolve()
-        if video.parent != folder.resolve() or not video.is_file():
-            raise RuntimeError(f"Corte para publicação não existe: {output['file']}")
-        publish_at = slots[index]
-        item = publish_file(
-            video, metadata_for(job, output), token=token,
-            privacy="private", publish_at=publish_at,
-        )
-        publications.append(item)
-    first = publications[0]
-    return {
-        "platform": "youtube", "status": "scheduled", "video_id": first["video_id"],
-        "url": first["url"], "privacy": first["privacy"], "file": first["file"],
-        "title": first["title"], "items": publications,
-        "timezone": config["timezone"], "schedule_times": list(config["schedule_times"]),
-    }
-
-
 _REVIEW_AUTHORIZATION = object()
 
 def publish_file(

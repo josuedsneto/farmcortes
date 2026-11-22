@@ -14,7 +14,6 @@ from urllib.parse import urlparse
 
 from .db import Database
 from .strategy import clean_transcript, hook_options, score_narrative, title_options
-from .youtube import publish as publish_youtube, settings as youtube_settings
 
 log = logging.getLogger(__name__)
 
@@ -510,41 +509,11 @@ class Processor:
         self.database.update(job_id, stage=stage, progress=progress, **extra)
 
     def _finish(self, job: dict, folder: Path, outputs: list[dict]) -> None:
-        job_id = job["id"]
-        self.database.update(job_id, status="done", stage="Cortes prontos", progress=98, outputs=outputs, error=None)
-        publication = {}
-        try:
-            duplicate = next(
-                (
-                    known for known in self.database.list(1000)
-                    if known["id"] != job_id and known.get("url") == job.get("url")
-                    and known.get("publication", {}).get("url")
-                ),
-                None,
-            )
-            if duplicate:
-                publication = {"platform": "youtube", "status": "duplicate", "duplicate_job_id": duplicate["id"]}
-            elif youtube_settings(self.data_dir)["enabled"] and bool(job.get("auto_publish", 1)):
-                self.update(job_id, "Publicando e agendando os cortes no YouTube", 99)
-                current = self.database.get(job_id) or job
-                reserved = {
-                    item["publish_at"]
-                    for known_job in self.database.list(100)
-                    for item in known_job.get("publication", {}).get("items", [])
-                    if item.get("publish_at")
-                }
-                publication = publish_youtube(current, folder, outputs, reserved=reserved)
-        except Exception as exc:
-            log.exception("job %s publication failed", job_id)
-            publication = {"platform": "youtube", "status": "failed", "error": humanize_error(str(exc))}
-        published_count = len(publication.get("items", []))
-        if publication.get("status") == "duplicate":
-            final_stage = "Cortes prontos · fonte já publicada"
-        elif not bool(job.get("auto_publish", 1)):
-            final_stage = "Cortes prontos para curadoria editorial"
-        else:
-            final_stage = f"{published_count} Shorts agendados no YouTube" if published_count else "Cortes prontos"
-        self.database.update(job_id, status="done", stage=final_stage, progress=100, publication=publication, error=None)
+        # Publishing happens only through review.publish_approved (AD-003).
+        self.database.update(
+            job["id"], status="done", stage="Cortes prontos para revisão", progress=100,
+            outputs=outputs, publication={}, error=None,
+        )
 
     def _recover_rendered_outputs(self, job: dict, folder: Path) -> list[dict] | None:
         transcript = folder / "transcript.srt"
