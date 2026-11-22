@@ -27,7 +27,6 @@ TOKEN_URL = f"{TIKTOK_API_BASE}/oauth/token/"
 REFRESH_URL = f"{TIKTOK_API_BASE}/oauth/token/"
 CREATOR_INFO_URL = f"{TIKTOK_API_BASE}/post/publish/creator_info/query/"
 VIDEO_INIT_URL = f"{TIKTOK_API_BASE}/post/publish/video/init/"
-VIDEO_UPLOAD_URL = "https://open.tiktokapis.com/v2/post/publish/video/upload/"
 VIDEO_STATUS_URL = f"{TIKTOK_API_BASE}/post/publish/status/fetch/"
 
 # Required scopes for Content Posting API
@@ -187,108 +186,57 @@ def creator_info(access_token: Optional[str] = None) -> dict:
     return response.json()
 
 
-def _init_video_upload(access_token: str, video_size: int, chunk_size: int = 4 * 1024 * 1024) -> dict:
-    """Initialize video upload session."""
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    body = {
-        "media_type": "VIDEO",
-        "media_source_info": {"source": "FILE_UPLOAD"},
-        "video_size": video_size,
-        "chunk_size": chunk_size,
-    }
-    response = requests.post(VIDEO_INIT_URL, headers=headers, json=body, timeout=30)
+INBOX_INIT_URL = f"{TIKTOK_API_BASE}/post/publish/inbox/video/init/"
+SINGLE_CHUNK_MAX = 64 * 1024 * 1024
+CHUNK_SIZE = 10 * 1024 * 1024
+
+
+def _chunk_plan(video_size: int) -> tuple[int, int]:
+    """TikTok rule: one chunk up to 64 MB; otherwise 5-64 MB chunks, the last one absorbs the rest."""
+    if video_size <= SINGLE_CHUNK_MAX:
+        return video_size, 1
+    return CHUNK_SIZE, video_size // CHUNK_SIZE
+
+
+def _init_video_upload(access_token: str, video_size: int, post_info: Optional[dict] = None) -> dict:
+    """Start an upload: direct post (video/init with post_info) or draft (inbox/video/init)."""
+    chunk_size, chunks = _chunk_plan(video_size)
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json; charset=UTF-8"}
+    body = {"source_info": {"source": "FILE_UPLOAD", "video_size": video_size, "chunk_size": chunk_size, "total_chunk_count": chunks}}
+    if post_info is not None:
+        body["post_info"] = post_info
+    response = requests.post(VIDEO_INIT_URL if post_info is not None else INBOX_INIT_URL, headers=headers, json=body, timeout=30)
     if response.status_code == 401:
         raise TikTokTokenError("Token inválido ou expirado")
     if response.status_code == 429:
         raise TikTokRateLimitError("Rate limit ao iniciar upload")
     if response.status_code != 200:
         raise TikTokError(f"Falha ao iniciar upload: {response.status_code} {response.text}")
-    return response.json()
+    result = response.json()
+    error = result.get("error") or {}
+    if error.get("code") not in (None, "ok"):
+        raise TikTokError(f"TikTok recusou o upload: {error}")
+    return result
 
 
-def _upload_chunks(upload_url: str, video_path: Path, chunk_size: int = 4 * 1024 * 1024) -> None:
-    """Upload video file in chunks."""
+def _upload_chunks(upload_url: str, video_path: Path) -> None:
+    """PUT the file in the chunks announced at init (Content-Range per chunk)."""
     file_size = video_path.stat().st_size
+    chunk_size, chunks = _chunk_plan(file_size)
     with video_path.open("rb") as f:
-        offset = 0
-        chunk_index = 0
-        while offset < file_size:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
+        for index in range(chunks):
+            start = index * chunk_size
+            chunk = f.read() if index == chunks - 1 else f.read(chunk_size)
             headers = {
-                "Content-Range": f"bytes {offset}-{offset + len(chunk) - 1}/{file_size}",
+                "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{file_size}",
+                "Content-Length": str(len(chunk)),
                 "Content-Type": "video/mp4",
             }
-            response = requests.put(upload_url, headers=headers, data=chunk, timeout=60)
+            response = requests.put(upload_url, headers=headers, data=chunk, timeout=300)
             if response.status_code == 429:
-                raise TikTokRateLimitError(f"Rate limit no chunk {chunk_index}")
-            if response.status_code not in (200, 201, 204, 308):
-                raise TikTokError(f"Falha no chunk {chunk_index}: {response.status_code} {response.text}")
-            offset += len(chunk)
-            chunk_index += 1
-
-
-def _publish_video(
-    access_token: str,
-    publish_id: str,
-    title: str,
-    privacy_level: str = "SELF_ONLY",
-    disable_duet: bool = True,
-    disable_stitch: bool = True,
-    disable_comment: bool = False,
-) -> dict:
-    """Publish the uploaded video."""
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    body = {
-        "post_info": {
-            "title": title[:150],
-            "privacy_level": privacy_level,
-            "disable_duet": disable_duet,
-            "disable_stitch": disable_stitch,
-            "disable_comment": disable_comment,
-        },
-        "source_info": {
-            "source": "FILE_UPLOAD",
-            "video_id": publish_id,
-        },
-    }
-    response = requests.post(f"{TIKTOK_API_BASE}/post/publish/video/publish/", headers=headers, json=body, timeout=30)
-    if response.status_code == 401:
-        raise TikTokTokenError("Token inválido ou expirado")
-    if response.status_code == 429:
-        raise TikTokRateLimitError("Rate limit ao publicar")
-    if response.status_code != 200:
-        raise TikTokError(f"Falha ao publicar: {response.status_code} {response.text}")
-    return response.json()
-
-
-def _create_draft(
-    access_token: str,
-    publish_id: str,
-    title: str,
-) -> dict:
-    """Create a draft (inbox) instead of direct post."""
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    body = {
-        "post_info": {
-            "title": title[:150],
-            "privacy_level": "SELF_ONLY",
-        },
-        "source_info": {
-            "source": "FILE_UPLOAD",
-            "video_id": publish_id,
-        },
-        "post_mode": "DRAFT",
-    }
-    response = requests.post(f"{TIKTOK_API_BASE}/post/publish/video/publish/", headers=headers, json=body, timeout=30)
-    if response.status_code == 401:
-        raise TikTokTokenError("Token inválido ou expirado")
-    if response.status_code == 429:
-        raise TikTokRateLimitError("Rate limit ao criar rascunho")
-    if response.status_code != 200:
-        raise TikTokError(f"Falha ao criar rascunho: {response.status_code} {response.text}")
-    return response.json()
+                raise TikTokRateLimitError(f"Rate limit no chunk {index}")
+            if response.status_code not in (200, 201, 204, 206, 308):
+                raise TikTokError(f"Falha no chunk {index}: {response.status_code} {response.text}")
 
 
 def upload_draft(
@@ -299,17 +247,14 @@ def upload_draft(
     privacy_level: str = "SELF_ONLY",
 ) -> dict:
     """
-    Upload video to TikTok as draft (default) or direct post.
+    Send an MP4 to TikTok (Content Posting API v2).
 
-    Args:
-        video_path: Path to MP4 video file (1080x1920 recommended)
-        caption: Video caption/title
-        direct_post: If True, publish directly (requires app audit). Default False -> draft.
-        privacy_level: Privacy level for direct post (SELF_ONLY, FRIENDS, PUBLIC).
-                      Ignored for drafts (always SELF_ONLY until user publishes).
-
-    Returns:
-        Dict with publish_id, status, and URL if available.
+    direct_post=False (default): "Upload" to the creator's inbox (scope video.upload); the
+    creator finishes the post in the TikTok app. Works for unaudited apps.
+    direct_post=True: "Direct Post" with post_info (scope video.publish). Until the app passes
+    TikTok's audit, privacy_level must be SELF_ONLY (private); after the audit,
+    PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS or FOLLOWER_OF_CREATOR are allowed.
+    TikTok processes the video asynchronously; publish_id identifies it (status/fetch).
     """
     video_path = Path(video_path).resolve()
     if not video_path.is_file():
@@ -318,41 +263,23 @@ def upload_draft(
         raise TikTokError("Apenas arquivos MP4 são suportados")
 
     access_token = get_valid_token()
-
-    # Initialize upload
-    video_size = video_path.stat().st_size
-    init_result = _init_video_upload(access_token, video_size)
-    # TikTok API returns data under "data" key
-    init_data = init_result.get("data", {})
+    post_info = None
+    if direct_post:
+        post_info = {
+            "title": caption[:2200], "privacy_level": privacy_level,
+            "disable_duet": True, "disable_stitch": True, "disable_comment": False,
+        }
+    init_data = _init_video_upload(access_token, video_path.stat().st_size, post_info).get("data", {})
     upload_url = init_data.get("upload_url")
     publish_id = init_data.get("publish_id")
     if not upload_url or not publish_id:
-        raise TikTokError(f"Resposta de init inválida: {init_result}")
-
-    # Upload chunks
+        raise TikTokError(f"Resposta de init inválida: {init_data}")
     _upload_chunks(upload_url, video_path)
-
-    # Publish as draft or direct post
     if direct_post:
-        result = _publish_video(access_token, publish_id, caption, privacy_level=privacy_level)
-        return {
-            "platform": "tiktok",
-            "mode": "direct_post",
-            "publish_id": publish_id,
-            "status": "published",
-            "video_id": result.get("data", {}).get("video_id"),
-            "url": f"https://www.tiktok.com/@{result.get('data', {}).get('user_id', 'unknown')}/video/{result.get('data', {}).get('video_id', '')}",
-        }
-    else:
-        result = _create_draft(access_token, publish_id, caption)
-        return {
-            "platform": "tiktok",
-            "mode": "draft",
-            "publish_id": publish_id,
-            "status": "draft_created",
-            "video_id": result.get("data", {}).get("video_id"),
-            "message": "Vídeo enviado como rascunho. Abra o app TikTok para revisar e publicar.",
-        }
+        return {"platform": "tiktok", "mode": "direct_post", "publish_id": publish_id, "status": "published",
+                "privacy_level": privacy_level}
+    return {"platform": "tiktok", "mode": "draft", "publish_id": publish_id, "status": "draft_created",
+            "message": "Vídeo enviado como rascunho. Abra o app TikTok para revisar e publicar."}
 
 
 def is_configured() -> bool:

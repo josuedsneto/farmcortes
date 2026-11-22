@@ -119,13 +119,29 @@ def publish_approved(db=None, data_dir=None, kinds=None):
     return results
 
 def _mark_verses(conn, item_id, platform):
-    column = {'youtube': 'published_youtube', 'facebook': 'published_facebook', 'instagram': 'published_instagram'}[platform]
+    column = {'youtube': 'published_youtube', 'tiktok': 'published_tiktok', 'facebook': 'published_facebook', 'instagram': 'published_instagram'}[platform]
     conn.execute(f'UPDATE biblia_verses SET {column}=1 WHERE ordem IN (SELECT ordem FROM biblia_videos WHERE review_id=?)', (item_id,))
 
+TIKTOK_MODES = {'draft': (False, 'SELF_ONLY'), 'private': (True, 'SELF_ONLY'), 'public': (True, 'PUBLIC_TO_EVERYONE')}
+
+def social_platforms():
+    """Enabled extra platforms for Biblia: Meta Reels when their env is set, TikTok when its env and token exist."""
+    from .social import meta, tiktok
+    return meta.enabled_platforms() + (['tiktok'] if tiktok.is_configured() else [])
+
+def _publish_tiktok(video, caption):
+    """FARMCORTES_TIKTOK_MODE: draft (default, inbox; unaudited apps), private (direct post SELF_ONLY,
+    allowed before the audit) or public (direct post, only after TikTok's audit)."""
+    from .social import tiktok
+    mode = os.getenv('FARMCORTES_TIKTOK_MODE', 'draft').strip().casefold()
+    direct, privacy = TIKTOK_MODES.get(mode, TIKTOK_MODES['draft'])
+    result = tiktok.upload_draft(video, caption, direct_post=direct, privacy_level=privacy)
+    return {'platform': 'tiktok', 'id': result['publish_id'], 'mode': result['mode']}
+
 def publish_social(db=None, max_attempts=3):
-    """Post approved Biblia items to the enabled Meta platforms (Facebook/Instagram Reels)."""
+    """Post approved Biblia items to the enabled extra platforms (Facebook/Instagram Reels, TikTok)."""
     from .social import meta
-    platforms = meta.enabled_platforms()
+    platforms = social_platforms()
     db = db or database()
     results = []
     if not platforms:
@@ -140,8 +156,11 @@ def publish_social(db=None, max_attempts=3):
             if entry.get('id') or entry.get('attempts', 0) >= max_attempts or not video.is_file():
                 continue
             try:
-                result = meta.publish(platform, video, row['chosen_title'], '\n\n'.join(filter(None, [row['description'], row['credit_text'], row['hashtags']])))
-                state[platform] = {'id': result['id'], 'published_at': now()}
+                if platform == 'tiktok':
+                    result = _publish_tiktok(video, f"{row['chosen_title']} {row['hashtags']}")
+                else:
+                    result = meta.publish(platform, video, row['chosen_title'], '\n\n'.join(filter(None, [row['description'], row['credit_text'], row['hashtags']])))
+                state[platform] = {k: v for k, v in result.items() if k != 'platform'} | {'published_at': now()}
                 results.append(result)
             except Exception as exc:
                 state[platform] = {'attempts': entry.get('attempts', 0) + 1, 'error': str(exc)[:300]}
