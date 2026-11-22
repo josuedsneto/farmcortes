@@ -77,7 +77,7 @@ def publish_approved(db=None, data_dir=None, kinds=None):
             allowed = {(e['platform'], e['slug']) for e in entries if e.get('approved') is True and e.get('platform') in ('twitch', 'kick')}
         except (OSError, ValueError, TypeError, KeyError):
             allowed = set()  # no streamer passes; own Biblia content does not need the whitelist
-        limit = max(0, int(os.getenv('FARMCORTES_DAILY_UPLOAD_LIMIT', '5')))
+        limit = max(0, int(os.getenv('FARMCORTES_DAILY_UPLOAD_LIMIT', '8')))
         zone = ZoneInfo('America/Sao_Paulo')
         today = datetime.now(zone).date()
         start = datetime.combine(today, time.min, zone).astimezone(timezone.utc).isoformat()
