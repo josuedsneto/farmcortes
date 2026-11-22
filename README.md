@@ -73,9 +73,12 @@ Gera um Short vertical por execução com a leitura sequencial da Bíblia (plano
 "Leia a Bíblia Toda em Um Ano", trazido do projeto Biblia). Usa o mesmo canal,
 o mesmo token e a mesma fila de revisão dos cortes:
 
-1. A fila de versículos fica no SQLite (`biblia_verses`). Na primeira execução
-   `dados-iniciais/biblia/versiculos.csv` é importado uma vez, com o estado de
-   publicação por plataforma (YouTube, TikTok, Facebook, Instagram).
+1. A fila de versículos fica no SQLite (`biblia_verses`). `dados-iniciais/biblia/versiculos.csv`
+   segue a versificação da Almeida Corrigida Fiel (31.106 versículos, 66 livros,
+   abreviações pt-BR: `jo` = Jó, `joa` = João, `at` = Atos). A primeira execução
+   importa tudo com o estado de publicação por plataforma; as seguintes só
+   acrescentam versículos novos (por livro/capítulo/versículo) sem reenfileirar
+   o que já foi publicado.
 2. O texto (Almeida Corrigida Fiel) vem da API Pesquisar na Bíblia, um capítulo
    por chamada, e fica guardado no banco.
 3. Versículos seguidos se juntam até ~57 s de narração; um versículo longo vira
@@ -100,7 +103,9 @@ token e `FARMCORTES_DAILY_UPLOAD_LIMIT` dos cortes; com privacidade `public` o
 vídeo é agendado no próximo horário livre de `FARMCORTES_YOUTUBE_SCHEDULE_TIMES`)
 e `review.publish_social`, que envia os itens aprovados para Facebook e
 Instagram Reels quando `FARMCORTES_META_ACCESS_TOKEN` e o ID da Page / conta
-estão definidos.
+estão definidos, e para o TikTok quando `FARMCORTES_TIKTOK_CLIENT_KEY/SECRET` e o
+token OAuth existem (`FARMCORTES_TIKTOK_MODE`: `draft` por padrão, porque app sem
+auditoria só pode mandar rascunho ou post privado).
 
 ```bash
 .venv/bin/python -m farmcortes.biblia run            # um vídeo (o que o timer roda)
