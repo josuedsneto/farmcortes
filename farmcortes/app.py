@@ -8,9 +8,10 @@ import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -80,6 +81,20 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Farmcortes", docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "farmcortes" / "static"), name="static")
 templates = Jinja2Templates(directory=ROOT / "farmcortes" / "templates")
+
+
+@app.middleware("http")
+async def reject_cross_origin_writes(request: Request, call_next):
+    # Basic Auth is resent by the browser on cross-site requests, so writes must come from this origin.
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        if origin is not None:
+            allowed = urlparse(origin).netloc == request.headers.get("host", "")
+        else:
+            allowed = request.headers.get("sec-fetch-site") != "cross-site"
+        if not allowed:
+            return JSONResponse({"detail": "Origem não permitida"}, status_code=403)
+    return await call_next(request)
 
 
 @app.get("/health")

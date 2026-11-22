@@ -78,12 +78,12 @@ O painel é protegido só por Basic Auth no nginx. O navegador reenvia essas cre
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| CSRF-01 | P1: Bloquear escrita cross-origin (AC1, borda porta) | Execute | Pending |
-| CSRF-02 | P1: Bloquear escrita cross-origin (AC2) | Execute | Pending |
-| CSRF-03 | P1: Bloquear escrita cross-origin (AC3) | Execute | Pending |
-| CSRF-04 | P1: Bloquear escrita cross-origin (AC4) | Execute | Pending |
-| CSRF-05 | P1: Clientes legítimos (AC1) | Execute | Pending |
-| CSRF-06 | P1: Clientes legítimos (AC2, borda Sec-Fetch-Site) | Execute | Pending |
+| CSRF-01 | P1: Bloquear escrita cross-origin (AC1, borda porta) | Execute | Implementing |
+| CSRF-02 | P1: Bloquear escrita cross-origin (AC2) | Execute | Implementing |
+| CSRF-03 | P1: Bloquear escrita cross-origin (AC3) | Execute | Implementing |
+| CSRF-04 | P1: Bloquear escrita cross-origin (AC4) | Execute | Implementing |
+| CSRF-05 | P1: Clientes legítimos (AC1) | Execute | Implementing |
+| CSRF-06 | P1: Clientes legítimos (AC2, borda Sec-Fetch-Site) | Execute | Implementing |
 
 **Coverage:** 6 total, 0 mapped to tasks (Tasks pulado: escopo Medium, 1 arquivo + 1 teste).
 
