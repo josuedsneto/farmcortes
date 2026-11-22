@@ -36,3 +36,56 @@ def test_strategy_snapshots_are_persisted(tmp_path):
     assert latest is not None
     assert latest["id"] == stored["id"]
     assert latest["views"] == 4833
+
+
+# worker-binary-pinning: static checks; the VPS has no PowerShell to run the script.
+import re
+from pathlib import Path
+
+WORKER = (Path(__file__).resolve().parent.parent / "farmcortes" / "worker.ps1").read_text(encoding="utf-8")
+YTDLP_SHA = "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a"
+DENO_SHA = "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf"
+
+
+def _value(name):
+    return re.search(rf'^\${name} = "([^"]*)"', WORKER, re.M).group(1)
+
+
+def test_worker_downloads_fixed_releases():  # BIN-01
+    assert "latest" not in WORKER
+    requirements = (Path(__file__).resolve().parent.parent / "requirements.txt").read_text(encoding="utf-8")
+    pinned = re.search(r"^yt-dlp==(\S+)", requirements, re.M).group(1)
+    assert [int(part) for part in _value("YtDlpVersion").split(".")] == [int(part) for part in pinned.split(".")]
+    assert _value("YtDlpUrl") == "https://github.com/yt-dlp/yt-dlp/releases/download/$YtDlpVersion/yt-dlp.exe"
+    assert _value("DenoUrl") == "https://github.com/denoland/deno/releases/download/v$DenoVersion/deno-x86_64-pc-windows-msvc.zip"
+    assert "-o $temporary $YtDlpUrl" in WORKER and "-o $archive $DenoUrl" in WORKER
+
+
+def test_worker_pins_official_sha256():  # BIN-02
+    assert _value("YtDlpSha256") == YTDLP_SHA
+    assert _value("DenoSha256") == DENO_SHA
+    assert "Get-FileHash -Algorithm SHA256" in WORKER
+
+
+def test_ytdlp_hash_is_checked_before_install():  # BIN-03
+    check = WORKER.index('Assert-Sha256 $temporary $YtDlpSha256 "Hash do yt-dlp nao confere"')
+    assert check < WORKER.index("Move-Item -Force $temporary $YtDlp")
+    assert "Remove-Item -Force $Path" in WORKER[WORKER.index("function Assert-Sha256"):check]
+
+
+def test_deno_hash_is_checked_before_extraction():  # BIN-04
+    check = WORKER.index('Assert-Sha256 $archive $DenoSha256 "Hash do Deno nao confere"')
+    assert check < WORKER.index("Expand-Archive -Path $archive")
+
+
+def test_installed_binaries_must_report_pinned_version():  # BIN-05, BIN-06, BIN-07
+    assert '"$version".Trim() -eq $YtDlpVersion' in WORKER
+    assert '"$version" -match "^deno $([regex]::Escape($DenoVersion)) "' in WORKER
+    assert "if (-not (Test-YtDlp)) {\n    Remove-Item -Force -ErrorAction SilentlyContinue $YtDlp" in WORKER.replace("\r\n", "\n")
+    assert "if (-not (Test-Deno)) {\n    Remove-Item -Force -ErrorAction SilentlyContinue $Deno" in WORKER.replace("\r\n", "\n")
+
+
+def test_failed_download_removes_partial_file():  # BIN-08
+    text = WORKER.replace("\r\n", "\n")
+    assert 'Remove-Item -Force -ErrorAction SilentlyContinue $temporary\n        throw "Falha ao baixar o yt-dlp oficial"' in text
+    assert 'Remove-Item -Force -ErrorAction SilentlyContinue $archive\n        throw "Falha ao baixar o Deno oficial"' in text

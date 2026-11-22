@@ -8,13 +8,21 @@ $YtDlp = Join-Path $Root "yt-dlp.exe"
 $Deno = Join-Path $Root "deno.exe"
 $Headers = @{ Authorization = "Bearer $Token"; "X-Worker-Name" = $WorkerName }
 
+# Fixed versions and official SHA-256 values. To upgrade, change both from the release checksums.
+$YtDlpVersion = "2026.08.19"
+$YtDlpUrl = "https://github.com/yt-dlp/yt-dlp/releases/download/$YtDlpVersion/yt-dlp.exe"
+$YtDlpSha256 = "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a"
+$DenoVersion = "2.9.8"
+$DenoUrl = "https://github.com/denoland/deno/releases/download/v$DenoVersion/deno-x86_64-pc-windows-msvc.zip"
+$DenoSha256 = "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf"
+
 New-Item -ItemType Directory -Force -Path $Root | Out-Null
 
 function Test-YtDlp {
     if (-not (Test-Path $YtDlp)) { return $false }
     try {
-        & $YtDlp --version *> $null
-        return $LASTEXITCODE -eq 0
+        $version = (& $YtDlp --version 2> $null) | Select-Object -First 1
+        return $LASTEXITCODE -eq 0 -and "$version".Trim() -eq $YtDlpVersion
     } catch {
         return $false
     }
@@ -23,10 +31,17 @@ function Test-YtDlp {
 function Test-Deno {
     if (-not (Test-Path $Deno)) { return $false }
     try {
-        & $Deno --version *> $null
-        return $LASTEXITCODE -eq 0
+        $version = (& $Deno --version 2> $null) | Select-Object -First 1
+        return $LASTEXITCODE -eq 0 -and "$version" -match "^deno $([regex]::Escape($DenoVersion)) "
     } catch {
         return $false
+    }
+}
+
+function Assert-Sha256($Path, $Expected, $Message) {
+    if ((Get-FileHash -Algorithm SHA256 -Path $Path).Hash -ne $Expected) {
+        Remove-Item -Force $Path
+        throw $Message
     }
 }
 
@@ -34,21 +49,13 @@ if (-not (Test-YtDlp)) {
     Remove-Item -Force -ErrorAction SilentlyContinue $YtDlp
     $temporary = "$YtDlp.download"
     Remove-Item -Force -ErrorAction SilentlyContinue $temporary
-    Write-Host "Baixando e validando o yt-dlp oficial..."
-    & curl.exe -fL --retry 3 --connect-timeout 30 -o $temporary "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao baixar o yt-dlp oficial" }
-    $file = Get-Item $temporary
-    $stream = [System.IO.File]::OpenRead($temporary)
-    try {
-        $first = $stream.ReadByte()
-        $second = $stream.ReadByte()
-    } finally {
-        $stream.Dispose()
+    Write-Host "Baixando e validando o yt-dlp $YtDlpVersion..."
+    & curl.exe -fL --retry 3 --connect-timeout 30 -o $temporary $YtDlpUrl
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $temporary
+        throw "Falha ao baixar o yt-dlp oficial"
     }
-    if ($file.Length -lt 5MB -or $first -ne 77 -or $second -ne 90) {
-        Remove-Item -Force $temporary
-        throw "O download do yt-dlp nao passou na verificacao"
-    }
+    Assert-Sha256 $temporary $YtDlpSha256 "Hash do yt-dlp nao confere"
     Move-Item -Force $temporary $YtDlp
     if (-not (Test-YtDlp)) {
         Remove-Item -Force $YtDlp
@@ -63,9 +70,13 @@ if (-not (Test-Deno)) {
     Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Root "deno.zip.download")
     Remove-Item -Force -ErrorAction SilentlyContinue $archive
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $extractDir
-    Write-Host "Baixando e validando o Deno para o YouTube..."
-    & curl.exe -fL --retry 3 --connect-timeout 30 -o $archive "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
-    if ($LASTEXITCODE -ne 0) { throw "Falha ao baixar o Deno oficial" }
+    Write-Host "Baixando e validando o Deno $DenoVersion para o YouTube..."
+    & curl.exe -fL --retry 3 --connect-timeout 30 -o $archive $DenoUrl
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Force -ErrorAction SilentlyContinue $archive
+        throw "Falha ao baixar o Deno oficial"
+    }
+    Assert-Sha256 $archive $DenoSha256 "Hash do Deno nao confere"
     Expand-Archive -Path $archive -DestinationPath $extractDir -Force
     $downloadedDeno = Join-Path $extractDir "deno.exe"
     if (-not (Test-Path $downloadedDeno) -or (Get-Item $downloadedDeno).Length -lt 10MB) {

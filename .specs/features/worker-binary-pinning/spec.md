@@ -80,14 +80,14 @@ O `worker.ps1` roda no PC do operador e baixa `yt-dlp.exe` e o Deno a partir de 
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| BIN-01 | P1: Downloads fixos (AC1) | Execute | Pending |
-| BIN-02 | P1: Downloads fixos (AC2) | Execute | Pending |
-| BIN-03 | P1: Downloads fixos (AC3) | Execute | Pending |
-| BIN-04 | P1: Downloads fixos (AC4) | Execute | Pending |
-| BIN-05 | P1: Versão instalada (AC1) | Execute | Pending |
-| BIN-06 | P1: Versão instalada (AC2) | Execute | Pending |
-| BIN-07 | P1: Versão instalada (AC3) | Execute | Pending |
-| BIN-08 | Edge: download falho | Execute | Pending |
+| BIN-01 | P1: Downloads fixos (AC1) | Execute | Implementing |
+| BIN-02 | P1: Downloads fixos (AC2) | Execute | Implementing |
+| BIN-03 | P1: Downloads fixos (AC3) | Execute | Implementing |
+| BIN-04 | P1: Downloads fixos (AC4) | Execute | Implementing |
+| BIN-05 | P1: Versão instalada (AC1) | Execute | Implementing |
+| BIN-06 | P1: Versão instalada (AC2) | Execute | Implementing |
+| BIN-07 | P1: Versão instalada (AC3) | Execute | Implementing |
+| BIN-08 | Edge: download falho | Execute | Implementing |
 
 **Coverage:** 8 total; Tasks pulado (um arquivo).
 
