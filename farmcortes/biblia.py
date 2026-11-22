@@ -82,25 +82,57 @@ def split_parts(text: str, max_seconds: float = PART_MAX_SECONDS) -> list[str]:
     return parts
 
 
+_REKEY_OFFSET = 10_000_000
+
+
 def import_csv(db: Database, path: Path = DEFAULT_CSV) -> int:
-    """Import versiculos.csv once (no-op when the queue already has rows), keeping published flags."""
+    """Load versiculos.csv into the queue and return how many verses were added.
+
+    The first run inserts every row with its published flags. Later runs merge by
+    (livro, capitulo, verso): new verses are added with the CSV flags, existing rows keep their
+    state in the DB (published flags, text, parts) and take the CSV 'ordem', and verses no longer
+    in the CSV are deleted when they have no history, or parked at a negative 'ordem' otherwise.
+    Nothing already published is queued again. Unchanged CSV -> no writes.
+    """
+    with Path(path).open(newline="", encoding="utf-8") as handle:
+        rows = [
+            (
+                int(row["ordem"]), row["livro"].strip().lower(), int(row["capitulo"]), int(row["verso"]),
+                *(int(str(row.get(f"publicado_{p}", "false")).strip().lower() == "true") for p in PLATFORMS),
+            )
+            for row in csv.DictReader(handle)
+        ]
+    wanted = {(livro, cap, verso): ordem for ordem, livro, cap, verso, *_ in rows}
     with db.connect() as conn:
-        if conn.execute("SELECT 1 FROM biblia_verses LIMIT 1").fetchone():
+        existing = {(r["livro"], r["capitulo"], r["verso"]): r["ordem"]
+                    for r in conn.execute("SELECT ordem,livro,capitulo,verso FROM biblia_verses WHERE ordem>0")}
+        if existing == wanted:
             return 0
-        with Path(path).open(newline="", encoding="utf-8") as handle:
-            rows = [
-                (
-                    int(row["ordem"]), row["livro"].strip().lower(), int(row["capitulo"]), int(row["verso"]),
-                    *(int(str(row.get(f"publicado_{p}", "false")).strip().lower() == "true") for p in PLATFORMS),
-                )
-                for row in csv.DictReader(handle)
-            ]
+        conn.execute("BEGIN IMMEDIATE")
+        referenced = {r[0] for r in conn.execute("SELECT ordem FROM biblia_videos")}
+        for key, old in existing.items():
+            if key in wanted:
+                continue
+            state = conn.execute(
+                "SELECT published_youtube+published_tiktok+published_facebook+published_instagram AS published,parts_done "
+                "FROM biblia_verses WHERE ordem=?", (old,)).fetchone()
+            if not state["published"] and not state["parts_done"] and old not in referenced:
+                conn.execute("DELETE FROM biblia_verses WHERE ordem=?", (old,))
+            else:  # keep the history, out of the queue
+                conn.execute("UPDATE biblia_verses SET ordem=?,parts_total=parts_done WHERE ordem=?", (-old, old))
+                conn.execute("UPDATE biblia_videos SET ordem=? WHERE ordem=?", (-old, old))
+        moves = [(wanted[key] + _REKEY_OFFSET, old) for key, old in existing.items() if key in wanted and wanted[key] != old]
+        for table in ("biblia_verses", "biblia_videos"):
+            conn.executemany(f"UPDATE {table} SET ordem=? WHERE ordem=?", moves)
+            conn.execute(f"UPDATE {table} SET ordem=ordem-? WHERE ordem>=?", (_REKEY_OFFSET, _REKEY_OFFSET))
+        new = [row for row in rows if (row[1], row[2], row[3]) not in existing]
         conn.executemany(
-            "INSERT OR IGNORE INTO biblia_verses (ordem,livro,capitulo,verso,published_youtube,published_tiktok,"
+            "INSERT INTO biblia_verses (ordem,livro,capitulo,verso,published_youtube,published_tiktok,"
             "published_facebook,published_instagram) VALUES (?,?,?,?,?,?,?,?)",
-            rows,
+            new,
         )
-    return len(rows)
+        conn.execute("COMMIT")
+    return len(new)
 
 
 def fetch_chapter(livro: str, capitulo: int) -> tuple[str, dict[int, str]]:
@@ -123,8 +155,10 @@ def fetch_chapter(livro: str, capitulo: int) -> tuple[str, dict[int, str]]:
     return book, {int(v["verse_number"]): " ".join(str(v["text"]).replace("\xa0", " ").split()) for v in verses}
 
 
-def _fill_text(conn, verse: dict, fetch) -> dict:
-    verse = dict(conn.execute("SELECT * FROM biblia_verses WHERE ordem=?", (verse["ordem"],)).fetchone())
+def _fill_text(conn, verse: dict, fetch) -> dict | None:
+    """Return the verse with its text, fetching its chapter once. A verse the API does not have
+    (different versification) is marked skipped (parts_total=0) instead of blocking the queue."""
+    verse =dict(conn.execute("SELECT * FROM biblia_verses WHERE ordem=?", (verse["ordem"],)).fetchone())
     if verse["texto"]:
         return verse
     book, texts = fetch(verse["livro"], verse["capitulo"])
@@ -135,7 +169,9 @@ def _fill_text(conn, verse: dict, fetch) -> dict:
         )
     row = conn.execute("SELECT * FROM biblia_verses WHERE ordem=?", (verse["ordem"],)).fetchone()
     if not row["texto"]:
-        raise PipelineError(f"Versículo {verse['livro']} {verse['capitulo']}:{verse['verso']} não veio da API")
+        log.warning("Versículo %s %s:%s não veio da API; pulando", verse["livro"], verse["capitulo"], verse["verso"])
+        conn.execute("UPDATE biblia_verses SET parts_total=0,parts_done=0 WHERE ordem=?", (verse["ordem"],))
+        return None
     return dict(row)
 
 
@@ -147,19 +183,23 @@ def next_video(db: Database, fetch=None, max_seconds: float = PART_MAX_SECONDS) 
             "SELECT * FROM biblia_verses WHERE published_youtube=0 AND (parts_total IS NULL OR parts_done < parts_total) "
             "ORDER BY ordem LIMIT 40"
         ).fetchall()]
-        if not rows:
+        first = None
+        while rows and first is None:
+            first = _fill_text(conn, rows.pop(0), fetch)
+        if first is None:
             return None
-        first = _fill_text(conn, rows[0], fetch)
         parts = split_parts(first["texto"], max_seconds)
         if len(parts) > 1:
             done = first["parts_done"] if first["parts_total"] == len(parts) else 0
             return {"verses": [first], "text": parts[done], "part": done + 1, "parts": len(parts),
                     "complete": [first["ordem"]] if done + 1 == len(parts) else []}
         verses, total = [first], estimate_seconds(first["texto"])
-        for row in rows[1:]:
+        for row in rows:
             if row["ordem"] != verses[-1]["ordem"] + 1:
                 break
             row = _fill_text(conn, row, fetch)
+            if row is None:
+                break
             seconds = estimate_seconds(row["texto"]) + VERSE_PAUSE
             if total + seconds > max_seconds:
                 break
@@ -366,8 +406,7 @@ def make_video(data_dir: Path, db: Database, plan: dict) -> int:
 
 def prune_published(db: Database, data_dir: Path) -> int:
     """Delete rendered Biblia videos nobody needs any more (published everywhere enabled, or discarded)."""
-    from .social import meta
-    platforms = meta.enabled_platforms()
+    platforms = review.social_platforms()
     removed = 0
     root = (data_dir / "biblia").resolve()
     with db.connect() as conn:

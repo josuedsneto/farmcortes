@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS biblia_verses (
     published_facebook INTEGER NOT NULL DEFAULT 0,
     published_instagram INTEGER NOT NULL DEFAULT 0
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_biblia_verses_ref ON biblia_verses(livro, capitulo, verso);
 CREATE TABLE IF NOT EXISTS biblia_videos (
     review_id INTEGER NOT NULL,
     ordem INTEGER NOT NULL,
