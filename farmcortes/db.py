@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS review_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL CHECK(kind IN ('short','long','compilation')), streamer TEXT NOT NULL, platform TEXT NOT NULL CHECK(platform IN ('twitch','kick')), source_url TEXT NOT NULL, file_path TEXT NOT NULL, duration REAL NOT NULL, peak_at REAL, category TEXT NOT NULL, titles_json TEXT NOT NULL, description TEXT NOT NULL, hashtags TEXT NOT NULL, credit_text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','discarded','published','failed')), chosen_title TEXT, created_at TEXT NOT NULL, decided_at TEXT, youtube_id TEXT, error TEXT, is_test INTEGER NOT NULL DEFAULT 0, published_at TEXT);
+REVIEW_QUEUE = """CREATE TABLE IF NOT EXISTS review_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL CHECK(kind IN ('short','long','compilation','biblia')), streamer TEXT NOT NULL, platform TEXT NOT NULL CHECK(platform IN ('twitch','kick','biblia')), source_url TEXT NOT NULL, file_path TEXT NOT NULL, duration REAL NOT NULL, peak_at REAL, category TEXT NOT NULL, titles_json TEXT NOT NULL, description TEXT NOT NULL, hashtags TEXT NOT NULL, credit_text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','discarded','published','failed')), chosen_title TEXT, created_at TEXT NOT NULL, decided_at TEXT, youtube_id TEXT, error TEXT, is_test INTEGER NOT NULL DEFAULT 0, published_at TEXT, approved_by TEXT, scheduled_for TEXT, social_json TEXT NOT NULL DEFAULT '{}');"""
+
+SCHEMA = REVIEW_QUEUE + """
+
 
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
@@ -60,6 +62,30 @@ CREATE TABLE IF NOT EXISTS discovery_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_discovery_candidates_score
 ON discovery_candidates(viral_score DESC, updated_at DESC);
+CREATE TABLE IF NOT EXISTS biblia_verses (
+    ordem INTEGER PRIMARY KEY,
+    livro TEXT NOT NULL,
+    capitulo INTEGER NOT NULL,
+    verso INTEGER NOT NULL,
+    texto TEXT,
+    referencia TEXT,
+    parts_total INTEGER,
+    parts_done INTEGER NOT NULL DEFAULT 0,
+    published_youtube INTEGER NOT NULL DEFAULT 0,
+    published_tiktok INTEGER NOT NULL DEFAULT 0,
+    published_facebook INTEGER NOT NULL DEFAULT 0,
+    published_instagram INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS biblia_videos (
+    review_id INTEGER NOT NULL,
+    ordem INTEGER NOT NULL,
+    PRIMARY KEY (review_id, ordem)
+);
+CREATE TABLE IF NOT EXISTS ai_cache (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -91,6 +117,7 @@ class Database:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
+            self._migrate_review_queue(conn)
             conn.executescript(SCHEMA)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
             if "source_path" not in columns:
@@ -112,6 +139,26 @@ class Database:
                     "UPDATE jobs SET status='queued', stage='Retomando processamento', progress=1 "
                     "WHERE status='processing'"
                 )
+
+    @staticmethod
+    def _migrate_review_queue(conn: sqlite3.Connection) -> None:
+        """Rebuild review_queue when its CHECK constraints predate the Biblia mode, keeping every row."""
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='review_queue'").fetchone()
+        if not row or "'biblia'" in row["sql"]:
+            return
+        old = [item["name"] for item in conn.execute("PRAGMA table_info(review_queue)").fetchall()]
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("ALTER TABLE review_queue RENAME TO review_queue_pre_biblia")
+            conn.execute(REVIEW_QUEUE)
+            new = {item["name"] for item in conn.execute("PRAGMA table_info(review_queue)").fetchall()}
+            columns = ",".join(name for name in old if name in new)
+            conn.execute(f"INSERT INTO review_queue ({columns}) SELECT {columns} FROM review_queue_pre_biblia")
+            conn.execute("DROP TABLE review_queue_pre_biblia")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
