@@ -1,7 +1,7 @@
 """Biblia mode: one vertical Bible-reading Short per run, sent to the shared review queue.
 
 Flow: verse queue in SQLite (imported once from versiculos.csv) -> verse text from the
-Pesquisar na Bíblia API (ACF) -> Piper narration -> Pexels background (Pixabay, then a plain
+Pesquisar na Bíblia API (ACF) -> edge-tts narration (Piper fallback) -> Pexels background (Pixabay, then a plain
 background, as fallbacks) -> FFmpeg render 1080x1920 -> review_queue (kind='biblia').
 Nothing is published here unless the item was approved, by a person or by
 FARMCORTES_BIBLIA_AUTO_APPROVE; publishing goes through review.publish_approved.
@@ -17,13 +17,14 @@ import os
 import random
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import requests
 
 from . import biblia_ai, biblia_cta, review, telegram
 from .db import Database
-from .original import _escape_filter, synthesize, timed_captions
+from .original import _escape_filter, synthesize
 from .pipeline import PipelineError, probe, run
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,12 @@ CTA_MARGIN = 2.5              # planning slack between the word estimate and the
 MIN_VERSE_BUDGET = 15         # below this a CTA is skipped rather than squeezing the reading
 VERSE_PAUSE = 0.5
 MUSIC_VOLUME = 0.15
+EDGE_VOICE = "pt-BR-AntonioNeural"  # Biblia's edge-tts voice, used with its default rate/pitch (+0%, +0Hz)
+CAPTION_CHARS = 26                  # longest caption line before a phrase is split
+WEAK_LINE_ENDS = {
+    "a", "o", "as", "os", "e", "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "que", "me", "te",
+    "se", "lhe", "um", "uma", "por", "para", "com", "ao", "aos", "à", "às", "meu", "minha", "teu", "tua", "seu", "sua",
+}
 PEXELS_THEMES = [
     "sunrise nature", "sky clouds golden", "forest light rays", "ocean calm horizon",
     "mountain peace morning", "meadow flowers sunlight", "river peaceful nature", "desert sunset warm",
@@ -310,7 +317,76 @@ def _clock(seconds: float) -> str:
     return f"{centis // 360000}:{centis // 6000 % 60:02d}:{centis // 100 % 60:02d}.{centis % 100:02d}"
 
 
-def write_subtitles(path: Path, text: str, reference: str, label: str, duration: float) -> None:
+def caption_groups(text: str, max_chars: int = CAPTION_CHARS) -> list[list[int]]:
+    """Word-index groups for captions: break after . ; : , ? ! first, then split long phrases into
+    balanced chunks at word boundaries, never ending a line on a weak word (artigo, preposição...)."""
+    words = text.split()
+    phrases, current = [], []
+    for index, word in enumerate(words):
+        current.append(index)
+        if word[-1] in ".;:,?!":
+            phrases.append(current)
+            current = []
+    if current:
+        phrases.append(current)
+    groups = []
+    for phrase in phrases:
+        size = len(" ".join(words[i] for i in phrase))
+        chunks = min(len(phrase), math.ceil(size / max_chars))
+        target = size / chunks
+        lines, line, length = [], [], 0
+        for i in phrase:
+            if line and len(lines) < chunks - 1 and length + len(words[i]) / 2 > target * (len(lines) + 1):
+                lines.append(line)
+                line = []
+            line.append(i)
+            length += len(words[i]) + 1
+        lines.append(line)
+        for a, b in zip(lines, lines[1:]):  # move a dangling weak word to the next line
+            while len(a) > 1 and words[a[-1]].casefold().strip(".,;:?!") in WEAK_LINE_ENDS:
+                b.insert(0, a.pop())
+        groups.extend(line for line in lines if line)
+    return groups
+
+
+def caption_timings(text: str, duration: float, words: list | None = None) -> list[tuple[float, float, str]]:
+    """(start, end, text) per caption. Uses the TTS word timings when they match the text, otherwise
+    spreads the captions over the narration by character count."""
+    tokens = text.split()
+    groups = caption_groups(text)
+    norm = [re.sub(r"\W", "", token.casefold()) for token in tokens]
+    starts = None
+    if words and "".join(norm) == "".join(re.sub(r"\W", "", w[0].casefold()) for w in words):
+        # map each token to the TTS word that holds its first and last letter (handles split/merged words)
+        bounds, cursor = [], 0
+        for word in words:
+            cursor += len(re.sub(r"\W", "", word[0].casefold()))
+            bounds.append(cursor)
+
+        def word_at(char):
+            return next(i for i, end in enumerate(bounds) if end > char) if char < cursor else len(words) - 1
+
+        starts, ends, position = [], [], 0
+        for token in norm:
+            starts.append(words[word_at(position)][1])
+            ends.append(words[word_at(position + max(len(token), 1) - 1)][2])
+            position += len(token)
+    if starts is None:
+        weights = [len(token) + 1 for token in tokens]
+        total, cursor, starts, ends = sum(weights), 0.0, [], []
+        for weight in weights:
+            starts.append(cursor)
+            cursor += duration * weight / total
+            ends.append(cursor)
+    result = []
+    for n, group in enumerate(groups):
+        start = starts[group[0]]
+        end = starts[groups[n + 1][0]] if n + 1 < len(groups) else min(duration, ends[group[-1]] + 0.4)
+        result.append((start, max(end, start + 0.3), " ".join(tokens[i] for i in group)))
+    return result
+
+
+def write_subtitles(path: Path, text: str, reference: str, label: str, duration: float, words: list | None = None) -> None:
     rows = [
         "[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 0\n\n[V4+ Styles]\n"
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
@@ -327,13 +403,50 @@ def write_subtitles(path: Path, text: str, reference: str, label: str, duration:
     rows.append(f"Dialogue: 1,0:00:00.00,{end},Ref,,0,0,0,,{_ass_text(reference)}\n")
     if label:
         rows.append(f"Dialogue: 1,0:00:00.00,{end},Part,,0,0,0,,{_ass_text(label)}\n")
-    for caption in timed_captions(text, duration):
-        rows.append(f"Dialogue: 0,{_clock(caption.start)},{_clock(caption.end)},Verse,,0,0,0,,{_ass_text(caption.text)}\n")
+    for start, end, caption in caption_timings(text, max(duration - 0.6, 0.5), words):
+        rows.append(f"Dialogue: 0,{_clock(start)},{_clock(end)},Verse,,0,0,0,,{_ass_text(caption)}\n")
     path.write_text("".join(rows), encoding="utf-8")
 
 
+def dark_trim(rows: list[int], threshold: int = 28, limit: float = 0.35) -> tuple[float, float]:
+    """Vertical span (top, bottom fractions) of the image without its near-black top/bottom bands
+    (dark foreground or sky), trimming at most `limit` of the height in total."""
+    n = len(rows)
+    top, bottom = 0, n
+    while top < n and rows[top] < threshold:
+        top += 1
+    while bottom > top and rows[bottom - 1] < threshold:
+        bottom -= 1
+    if bottom <= top:  # a dark image all over: leave it alone
+        return 0.0, 1.0
+    cut_top, cut_bottom = top / n, (n - bottom) / n
+    if cut_top + cut_bottom > limit:  # trim both bands proportionally down to the limit
+        scale = limit / (cut_top + cut_bottom)
+        cut_top, cut_bottom = cut_top * scale, cut_bottom * scale
+    return cut_top, 1 - cut_bottom
+
+
+def _row_brightness(image: Path, rows: int = 64) -> list[int]:
+    try:
+        raw = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(image), "-vf", f"scale=1:{rows},format=gray", "-f", "rawvideo", "-"],
+            capture_output=True, timeout=60, check=True,
+        ).stdout
+        return list(raw[:rows]) if len(raw) >= rows else []
+    except Exception:
+        return []
+
+
+def background_filter(image: Path) -> str:
+    """Cover 1080x1920 (scale up + center crop, never letterboxed) after trimming near-black bands."""
+    rows = _row_brightness(image)
+    top, bottom = dark_trim(rows) if rows else (0.0, 1.0)
+    crop = f"crop=iw:ih*{bottom - top:.4f}:0:ih*{top:.4f}," if (top, bottom) != (0.0, 1.0) else ""
+    return f"{crop}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
+
 def render(image: Path, narration: Path, music: Path | None, text: str, reference: str, label: str, output: Path,
-           cta: "biblia_cta.Cta | None" = None) -> float:
+           cta: "biblia_cta.Cta | None" = None, words: list | None = None) -> float:
     """One FFmpeg pass: verse segment (captions, music) then the optional CTA clip, normalized to
     1080x1920, 30 fps, SAR 1, 48 kHz stereo, -16 LUFS. The whole video stays within MAX_VIDEO_SECONDS;
     the narration is sped up slightly if needed. Returns the total duration."""
@@ -346,10 +459,11 @@ def render(image: Path, narration: Path, music: Path | None, text: str, referenc
         raise PipelineError(f"Narração longa demais para um Short: {spoken:.1f}s")
     verse = spoken / tempo + 0.6
     subtitle = output.with_suffix(".ass")
-    write_subtitles(subtitle, text, reference, label, verse)
+    timings = [(w, s / tempo, e / tempo) for w, s, e in words] if words else None
+    write_subtitles(subtitle, text, reference, label, verse, timings)
     audio_out = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
     filters = (
-        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+        f"[0:v]{background_filter(image)},"
         f"eq=brightness=-0.2:saturation=0.85,subtitles='{_escape_filter(subtitle)}',fps=30,format=yuv420p,setsar=1[vv];"
         f"[1:a]atempo={tempo:.4f},apad=pad_dur=0.6,loudnorm=I=-16:LRA=9:TP=-1.5[n]"
     )
@@ -394,6 +508,47 @@ def verse_budget(cta: "biblia_cta.Cta | None") -> float:
     return min(PART_MAX_SECONDS, MAX_VIDEO_SECONDS - cta.duration - CTA_MARGIN)
 
 
+def edge_narration(text: str, output: Path) -> list[tuple[str, float, float]]:
+    """Synthesize with edge-tts (unofficial Microsoft Edge endpoint). Returns (word, start, end) in seconds."""
+    import asyncio
+
+    import edge_tts
+
+    async def stream():
+        audio, words = bytearray(), []
+        voice = os.getenv("FARMCORTES_BIBLIA_VOICE") or EDGE_VOICE
+        async for chunk in edge_tts.Communicate(text, voice, boundary="WordBoundary").stream():
+            if chunk["type"] == "audio":
+                audio += chunk["data"]
+            elif chunk["type"] == "WordBoundary":
+                start = chunk["offset"] / 10_000_000
+                words.append((chunk["text"], start, start + chunk["duration"] / 10_000_000))
+        return bytes(audio), words
+
+    audio, words = asyncio.run(stream())
+    if not audio:
+        raise PipelineError("edge-tts não devolveu áudio")
+    output.write_bytes(audio)
+    return words
+
+
+def narrate(text: str, folder: Path, data_dir: Path) -> tuple[Path, list | None]:
+    """edge-tts by default (FARMCORTES_BIBLIA_TTS=edge|piper); Piper takes over if edge-tts fails.
+    Returns the audio path and the word timings (None for Piper)."""
+    if (os.getenv("FARMCORTES_BIBLIA_TTS") or "edge").strip().casefold() != "piper":
+        try:
+            path = folder / "narration.mp3"
+            return path, edge_narration(text, path)
+        except Exception as exc:
+            log.warning("edge-tts falhou, usando Piper: %s", exc)
+    model = data_dir / "models" / "pt_BR-edresson-low.onnx"
+    if not model.is_file():
+        raise PipelineError("Modelo de voz pt-BR não está instalado")
+    path = folder / "narration.wav"
+    synthesize(text, path, model)
+    return path, None
+
+
 # ── run ──────────────────────────────────────────────────────────────────────
 
 def make_video(data_dir: Path, db: Database, plan: dict, cta: biblia_cta.Cta | None = None) -> int:
@@ -405,15 +560,12 @@ def make_video(data_dir: Path, db: Database, plan: dict, cta: biblia_cta.Cta | N
     folder.mkdir(parents=True)
     video = folder / "short.mp4"
     try:
-        model = data_dir / "models" / "pt_BR-edresson-low.onnx"
-        if not model.is_file():
-            raise PipelineError("Modelo de voz pt-BR não está instalado")
-        synthesize(plan["text"], folder / "narration.wav", model)
+        narration, words = narrate(plan["text"], folder, data_dir)
         attribution = background_image(folder / "background.jpg")
         music, music_credit = background_music(data_dir)
         reference = biblia_ai.reference_range(plan["verses"])
         label = f"Parte {plan['part']}/{plan['parts']}" if plan["parts"] > 1 else ""
-        duration = render(folder / "background.jpg", folder / "narration.wav", music, plan["text"], reference, label, video, cta)
+        duration = render(folder / "background.jpg", narration, music, plan["text"], reference, label, video, cta, words)
     except Exception:
         shutil.rmtree(folder, ignore_errors=True)
         raise

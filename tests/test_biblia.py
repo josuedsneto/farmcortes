@@ -11,6 +11,9 @@ LONG = " ".join(f"palavra{i}," if i % 20 == 19 else f"palavra{i}" for i in range
 
 @pytest.fixture(autouse=True)
 def no_ai_keys(monkeypatch):
+    def no_network(text, output):
+        raise OSError("edge-tts disabled in tests")
+    monkeypatch.setattr(biblia, "edge_narration", no_network)
     for name in ("FARMCORTES_GROQ_API_KEY", "FARMCORTES_GEMINI_API_KEY", "FARMCORTES_BIBLIA_AUTO_APPROVE",
                  "FARMCORTES_META_ACCESS_TOKEN", "FARMCORTES_FACEBOOK_PAGE_ID", "FARMCORTES_INSTAGRAM_USER_ID"):
         monkeypatch.delenv(name, raising=False)
@@ -254,7 +257,7 @@ def test_run_once_enqueues_for_review_and_cleans_temp_files(tmp_path, monkeypatc
     monkeypatch.setattr(biblia, "background_image", fake_image)
     monkeypatch.setattr(biblia, "background_music", lambda data_dir: (None, ""))
 
-    def fake_render(image, narration, music, text, reference, label, output, cta=None):
+    def fake_render(image, narration, music, text, reference, label, output, cta=None, words=None):
         output.with_suffix(".ass").write_text("x")
         output.write_bytes(b"mp4")
         return 12.0
@@ -549,3 +552,54 @@ def test_cta_adds_the_app_line_to_the_description(tmp_path, monkeypatch):
     assert biblia_cta.description_line() == "📱 Conheça o Bibliagram: https://bibliagram.app"
     monkeypatch.setenv("FARMCORTES_BIBLIA_APP_URL", "")
     assert biblia_cta.description_line() == "📱 Conheça o Bibliagram"
+
+
+# ── captions, narration, background ──────────────────────────────────────────
+
+PSALM = ("O SENHOR é o meu pastor, nada me faltará. Deitar-me faz em verdes pastos, guia-me mansamente a águas "
+         "tranqüilas. Refrigera a minha alma; guia-me pelas veredas da justiça, por amor do seu nome.")
+
+
+def test_captions_break_at_punctuation_then_at_natural_word_boundaries():
+    lines = [" ".join(PSALM.split()[i] for i in group) for group in biblia.caption_groups(PSALM)]
+    assert " ".join(lines) == PSALM
+    assert lines[:2] == ["O SENHOR é o meu pastor,", "nada me faltará."]
+    assert "a águas tranqüilas." in lines and "meu pastor, nada me" not in lines
+    for line in lines:
+        assert len(line) <= biblia.CAPTION_CHARS or " " not in line
+        assert line.split()[-1].strip(".,;:?!").casefold() not in biblia.WEAK_LINE_ENDS or line[-1] in ".,;:?!"
+    assert not any(line[-1] not in ".,;:?!" and next_line[0].islower() and len(line) < 8
+                   for line, next_line in zip(lines, lines[1:]))
+
+
+def test_caption_timing_follows_tts_word_boundaries_or_falls_back():
+    words = [(w.strip(".,;"), i * 0.5, i * 0.5 + 0.4) for i, w in enumerate("O SENHOR é o meu pastor, nada me faltará.".split())]
+    timed = biblia.caption_timings("O SENHOR é o meu pastor, nada me faltará.", 10.0, words)
+    assert timed == [(0.0, 3.0, "O SENHOR é o meu pastor,"), (3.0, pytest.approx(4.8), "nada me faltará.")]
+    spread = biblia.caption_timings("O SENHOR é o meu pastor, nada me faltará.", 10.0, [("outra", 0, 1)])
+    assert spread[0][0] == 0 and spread[-1][1] == pytest.approx(10.0) and len(spread) == 2
+
+
+def test_edge_tts_is_the_default_and_piper_takes_over_when_it_fails(tmp_path, monkeypatch):
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "pt_BR-edresson-low.onnx").write_bytes(b"0")
+    piper = []
+    monkeypatch.setattr(biblia, "synthesize", lambda text, output, model: piper.append(output.name))
+    monkeypatch.setattr(biblia, "edge_narration", lambda text, output: output.write_bytes(b"mp3") and [("Oi", 0.0, 0.3)])
+    assert biblia.narrate("Oi", tmp_path, tmp_path) == (tmp_path / "narration.mp3", [("Oi", 0.0, 0.3)]) and piper == []
+
+    def offline(text, output):
+        raise OSError("sem rede")
+    monkeypatch.setattr(biblia, "edge_narration", offline)
+    assert biblia.narrate("Oi", tmp_path, tmp_path) == (tmp_path / "narration.wav", None)
+    monkeypatch.setenv("FARMCORTES_BIBLIA_TTS", "piper")
+    monkeypatch.setattr(biblia, "edge_narration", lambda text, output: pytest.fail("piper mode must not call edge"))
+    assert biblia.narrate("Oi", tmp_path, tmp_path)[1] is None and piper == ["narration.wav", "narration.wav"]
+
+
+def test_background_trims_dark_bands_but_never_more_than_the_limit():
+    assert biblia.dark_trim([200] * 64) == (0.0, 1.0)
+    assert biblia.dark_trim([200] * 48 + [5] * 16) == (0.0, 0.75)
+    top, bottom = biblia.dark_trim([5] * 10 + [200] * 24 + [5] * 30)
+    assert top > 0 and 1 - (bottom - top) == pytest.approx(0.35)
+    assert biblia.dark_trim([5] * 64) == (0.0, 1.0)
