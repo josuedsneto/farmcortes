@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Farmcortes viral discovery every night
+
+[Timer]
+OnCalendar=*-*-* 03:10:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=5m
+Unit=farmcortes-discovery.service
+
+[Install]
+WantedBy=timers.target

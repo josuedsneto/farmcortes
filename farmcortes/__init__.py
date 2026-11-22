@@ -1,0 +1,2 @@
+"""Farmcortes application package."""
+

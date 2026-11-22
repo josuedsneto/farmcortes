@@ -1,0 +1,8 @@
+data/
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+.codex-*.log
+
+dados-iniciais/farmcortes.sqlite3

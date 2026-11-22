@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Farmcortes — LIVE</title><link rel="stylesheet" href="/static/app.css?v=4">
+  <style>.live-form{display:grid;gap:1rem;padding:1.5rem;border:1px solid #444;border-radius:16px}.live-form input[type=url]{width:100%;padding:1rem}.live-card{border:1px solid #444;border-radius:12px;padding:1rem;margin:1rem 0}.live-card a{display:inline-block;margin:0.5rem}video{width:100%;max-width:560px;max-height:315px}button{cursor:pointer;padding:.7rem}label{display:block}#error{color:#ff9999}nav{display:flex;gap:1rem}</style>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/"><span>FARM</span><b>CORTES</b></a><nav><a href="/">Mesa de corte</a><a href="/live" aria-current="page">LIVE</a></nav></header>
+<main>
+<section class="composer">
+  <h1>Da live ao corte, enquanto acontece.</h1>
+  <p>Twitch, Kick ou YouTube público. Até {{ limit }} lives simultâneas. Cortes verticais com legenda e chamada de inscrição ficam na Mesa de corte para revisão.</p>
+  <form id="live-form" class="live-form">
+    <label>URL da live<input type="url" name="url" required placeholder="https://www.twitch.tv/canal" autocomplete="url"></label>
+    <label><input type="checkbox" name="rights_confirmed" required> Tenho autorização para cortar esta live</label>
+    <button type="submit">Assistir e iniciar cortes</button>
+    <p id="error" role="alert"></p>
+  </form>
+  <p>Janela de captura: últimos {{ window_minutes }} minutos; parada abaixo de 5 GB livres. Meta: corte em cerca de 5 minutos, conforme o servidor e a fala. O modelo Whisper deve estar instalado localmente.</p>
+  <p>YouTube depende de acesso público pelo yt-dlp. Sem cookies, proxy ou PO token. Os cortes aguardam revisão; não há publicação automática neste modo.</p>
+  <div id="watch" hidden><h2>Assistir</h2><p><a id="watch-link" target="_blank" rel="noopener noreferrer">Abrir live na plataforma ↗</a></p><video id="preview" controls autoplay muted playsinline></video><p>Prévia local do último segmento concluído, com atraso de aproximadamente 1 minuto. Aguarde o primeiro segmento; a prévia avança ao terminar a reprodução.</p></div>
+</section>
+<section class="queue"><h2>Lives e cortes</h2><div id="lives" aria-live="polite"></div></section>
+</main>
+<script>
+const form=document.querySelector('#live-form'), error=document.querySelector('#error'), list=document.querySelector('#lives');
+let watchedId=null, previewVersion=null;
+const preview=document.querySelector('#preview');
+function updatePreview(job){
+  if(job.id!==watchedId || !job.source_duration || (previewVersion===job.source_duration && !preview.error))return;
+  if(previewVersion!==null && !preview.paused && !preview.ended)return;
+  previewVersion=job.source_duration;preview.src=`/api/live/${job.id}/preview?v=${previewVersion}`;
+}
+function node(tag,text){const element=document.createElement(tag);element.textContent=text;return element;}
+async function refresh(){
+  try{
+    const response=await fetch('/api/live'); if(!response.ok) throw new Error('Não foi possível consultar as lives');
+    const jobs=await response.json(); list.replaceChildren();
+    if(!jobs.length) list.append(node('p','Nenhuma live iniciada.'));
+    for(const job of jobs){
+      updatePreview(job);
+      const card=node('article','');card.className='live-card';card.append(node('h3',job.title),node('p',job.stage));
+      if(job.error)card.append(node('p',job.error));
+      if(['live_recording','live_stopping'].includes(job.status)){
+        const watch=node('button','Assistir');watch.type='button';watch.onclick=()=>showWatch(job);card.append(watch);
+        const stop=node('button','Parar');stop.type='button';stop.disabled=job.status==='live_stopping';
+        stop.onclick=async()=>{stop.disabled=true;try{const r=await fetch(`/api/live/${job.id}/stop`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail);await refresh();}catch(e){error.textContent=e.message;stop.disabled=false;}};card.append(stop);
+      }
+      for(const clip of job.outputs){
+        const row=node('div',clip.title+' · '+clip.duration+'s');
+        for(const [field,label] of [['file','Revisar / baixar MP4'],['subtitle','Legenda']]){
+          const link=node('a',label);link.href=`/jobs/${job.id}/files/${clip[field]}`;row.append(link);
+        }card.append(row);
+      }list.append(card);
+    }
+  }catch(e){error.textContent=e.message;}
+}
+function showWatch(job){watchedId=job.id;previewVersion=null;document.querySelector('#watch').hidden=false;document.querySelector('#watch-link').href=job.url;updatePreview(job);}
+form.onsubmit=async(event)=>{event.preventDefault();error.textContent='';const button=form.querySelector('button');button.disabled=true;try{const response=await fetch('/api/live',{method:'POST',body:new FormData(form)});const job=await response.json();if(!response.ok)throw new Error(job.detail);showWatch(job);await refresh();}catch(e){error.textContent=e.message;}finally{button.disabled=false;}};
+refresh();setInterval(refresh,3000);
+</script>
+</body>
+</html>

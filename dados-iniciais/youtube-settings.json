@@ -1,0 +1,7 @@
+{
+  "enabled": true,
+  "privacy": "public",
+  "schedule_times": ["09:00", "12:00", "15:00", "18:00", "21:00", "23:00"],
+  "longform_time": "20:00",
+  "timezone": "America/Sao_Paulo"
+}

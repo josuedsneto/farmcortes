@@ -1,0 +1,22 @@
+[Unit]
+Description=Farmcortes editorial compilation from long sources
+After=network-online.target farmcortes.service supoclip-llm.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/.openclaw/workspace/farmcortes
+Environment=PATH=/home/admin/.openclaw/workspace/farmcortes/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=FARMCORTES_DATA=/home/admin/.openclaw/workspace/farmcortes/data
+Environment=FARMCORTES_YOUTUBE_ENABLED=true
+Environment=FARMCORTES_YOUTUBE_TOKEN=/home/admin/.openclaw/workspace/farmcortes/data/secrets/youtube-token.json
+ExecStart=/home/admin/.openclaw/workspace/farmcortes/.venv/bin/python -m farmcortes.source_compilations --data-dir /home/admin/.openclaw/workspace/farmcortes/data --publish --max-count 1
+Nice=10
+CPUWeight=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/admin/.openclaw/workspace/farmcortes/data

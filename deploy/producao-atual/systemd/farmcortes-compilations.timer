@@ -1,0 +1,11 @@
+[Unit]
+Description=Create one Farmcortes long-source compilation per day
+
+[Timer]
+OnCalendar=*-*-* 23:30:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=15m
+Unit=farmcortes-compilations.service
+
+[Install]
+WantedBy=timers.target

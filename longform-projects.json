@@ -1,0 +1,60 @@
+{
+  "target_seconds": 1200,
+  "format": "1920x1080, 16:9, 30 fps",
+  "projects": [
+    {
+      "id": "20-minutos-para-rir",
+      "title": "20 Minutos Para Rir: Pegadinhas e Momentos Engraçados",
+      "status": "source_selection",
+      "source_rule": "Somente vídeos próprios, autorizados ou Creative Commons Attribution",
+      "target_mix": [
+        "pegadinhas com reação clara",
+        "situações espontâneas com começo e desfecho",
+        "momentos engraçados sem humilhação ou dano",
+        "transições originais do Coletivo Cortes"
+      ],
+      "structure": [
+        {"segment": "abertura", "seconds": 25},
+        {"segment": "bloco_1_ganchos_rapidos", "seconds": 330},
+        {"segment": "transicao_autoral", "seconds": 20},
+        {"segment": "bloco_2_pegadinhas", "seconds": 380},
+        {"segment": "transicao_autoral", "seconds": 20},
+        {"segment": "bloco_3_melhores_reacoes", "seconds": 390},
+        {"segment": "encerramento_e_cta", "seconds": 35}
+      ]
+    },
+    {
+      "id": "melhores-cortes-murilo-couto",
+      "title": "20 Minutos dos Melhores Momentos de Murilo Couto",
+      "status": "needs_authorized_sources",
+      "known_pipeline_source": "108ff6496be5",
+      "minimum_sources": 3,
+      "source_rule": "Exige autorização do titular ou licença compatível para cada fonte",
+      "structure": [
+        {"segment": "abertura_autoral", "seconds": 30},
+        {"segment": "bloco_1_observacoes", "seconds": 360},
+        {"segment": "contexto_autoral", "seconds": 25},
+        {"segment": "bloco_2_improviso", "seconds": 390},
+        {"segment": "contexto_autoral", "seconds": 25},
+        {"segment": "bloco_3_melhores_reacoes", "seconds": 335},
+        {"segment": "encerramento_e_cta", "seconds": 35}
+      ]
+    },
+    {
+      "id": "renato-albani-para-rir",
+      "title": "20 Minutos de Renato Albani Para Rir",
+      "status": "needs_authorized_sources",
+      "minimum_sources": 3,
+      "source_rule": "Exige autorização do titular ou licença compatível para cada fonte",
+      "structure": [
+        {"segment": "abertura_autoral", "seconds": 30},
+        {"segment": "bloco_1_cotidiano", "seconds": 360},
+        {"segment": "contexto_autoral", "seconds": 25},
+        {"segment": "bloco_2_relacionamentos", "seconds": 390},
+        {"segment": "contexto_autoral", "seconds": 25},
+        {"segment": "bloco_3_historias", "seconds": 335},
+        {"segment": "encerramento_e_cta", "seconds": 35}
+      ]
+    }
+  ]
+}

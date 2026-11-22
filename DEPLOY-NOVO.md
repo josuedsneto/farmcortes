@@ -1,0 +1,39 @@
+# Farmcortes — novo deploy
+
+Pacote gerado em 21/11/2026 a partir do commit 9038b07 (servidor atual: farmcortes.169-58-183-205.sslip.io).
+
+## O que vem no pacote
+- Código completo (`farmcortes/`), testes, `requirements.txt`, políticas (`editorial-policy.json`, `caption-glossary.json`, `longform-projects.json`).
+- `deploy/`: modelos de systemd e nginx. `deploy/producao-atual/`: cópia exata dos arquivos que rodam hoje
+  (systemd com os drop-ins `pause-publish.conf`, que hoje DESLIGAM a publicação no YouTube, e o nginx).
+- `dados-iniciais/`: banco SQLite atual (fila, revisão, descobertas; sem senhas) e `youtube-settings.json`.
+- `.env.example`: todas as variáveis que o código lê.
+
+## O que NÃO vem (por segurança ou tamanho)
+- Credenciais: `data/secrets/` (token OAuth do YouTube, token do TikTok, token do worker local) e a senha do nginx
+  (`/etc/nginx/.htpasswd-farmcortes`). No servidor novo: autorize o canal de novo pelo fluxo OAuth do app e crie
+  outra senha com `htpasswd -c /etc/nginx/.htpasswd-farmcortes <usuario>`.
+- Vídeos e trabalhos (`data/jobs`, `compilations`, `originals`… ~11 GB) e o `.venv`.
+- Voz Piper `pt_BR-edresson-low.onnx` (+ `.json`): baixe em https://huggingface.co/rhasspy/piper-voices
+  (pt/pt_BR/edresson/low) para `data/models/`. Os modelos Whisper baixam sozinhos no primeiro uso.
+
+## Passo a passo (Ubuntu 24.04)
+1. `sudo apt install -y python3-venv python3-dev ffmpeg nginx certbot python3-certbot-nginx git`
+2. Copie a pasta para `/opt/farmcortes` (ou outro caminho; ajuste os caminhos nos arquivos de systemd).
+3. `cd /opt/farmcortes && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+4. `mkdir -p data/secrets data/models && cp dados-iniciais/* data/` (opcional: começar com o banco atual).
+5. Baixe a voz Piper para `data/models/` (acima).
+6. Teste: `.venv/bin/pytest -q` e `.venv/bin/uvicorn farmcortes.app:app --host 127.0.0.1 --port 8012`.
+7. systemd: copie `deploy/farmcortes*.service|timer` (ou os de `deploy/producao-atual/systemd`) para
+   `/etc/systemd/system/`, ajuste `User`, `WorkingDirectory` e caminhos, e:
+   `sudo systemctl daemon-reload && sudo systemctl enable --now farmcortes farmcortes-discovery.timer farmcortes-compilations.timer`
+   Os drop-ins `pause-publish.conf` deixam a publicação desligada; remova-os quando quiser publicar.
+8. nginx: use `deploy/producao-atual/nginx-farmcortes.conf` trocando o `server_name`, crie o `.htpasswd`
+   e rode `sudo certbot --nginx -d <seu-dominio>`. `client_max_body_size 4G` e timeouts longos são necessários para upload.
+9. YouTube: crie o OAuth no Google Cloud (YouTube Data API v3), autorize pelo app e só então
+   `FARMCORTES_YOUTUBE_ENABLED=true`.
+
+## Observações
+- Na VPS, o YouTube costuma bloquear download anônimo (verificação anti-robô). O caminho legítimo é enviar o
+  arquivo ou usar link do Google Drive/Dropbox. Não usar cookies, proxy ou PO Token para contornar.
+- Processamento pesado (Whisper/renderização) consome bastante CPU e memória.

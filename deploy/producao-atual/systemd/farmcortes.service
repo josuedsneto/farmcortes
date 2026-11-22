@@ -1,0 +1,31 @@
+[Unit]
+Description=Farmcortes private video clipping service
+After=network.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/.openclaw/workspace/farmcortes
+Environment=PATH=/home/admin/.openclaw/workspace/farmcortes/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=FARMCORTES_DATA=/home/admin/.openclaw/workspace/farmcortes/data
+Environment=FARMCORTES_YOUTUBE_ENABLED=true
+Environment=FARMCORTES_YOUTUBE_TOKEN=/home/admin/.openclaw/workspace/farmcortes/data/secrets/youtube-token.json
+Environment=FARMCORTES_YOUTUBE_PRIVACY=public
+ExecStart=/home/admin/.openclaw/workspace/farmcortes/.venv/bin/uvicorn farmcortes.app:app --host 127.0.0.1 --port 8012
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/admin/.openclaw/workspace/farmcortes/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

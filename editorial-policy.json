@@ -1,0 +1,17 @@
+{
+  "timezone": "America/Sao_Paulo",
+  "nightly_count": 3,
+  "max_pending_jobs": 8,
+  "default_topics": [
+    {"theme": "humor", "query": "humor brasileiro histórias engraçadas entrevista podcast"},
+    {"theme": "conversas", "query": "podcast brasileiro conversa inesperada história de bastidor"},
+    {"theme": "curiosidades", "query": "casos reais curiosidades brasileiras história surpreendente"}
+  ],
+  "campaigns": [],
+  "source_compilations": {
+    "min_sources": 3,
+    "min_total_seconds": 1080,
+    "target_seconds": 1200,
+    "max_source_seconds": 480
+  }
+}
