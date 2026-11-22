@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 5,
+  "next_id": 7,
   "lessons": [
     {
       "id": "L-001",
@@ -76,6 +76,42 @@
       ],
       "created": "2026-11-22T20:06:09Z",
       "last_seen": "2026-11-22T20:06:09Z"
+    },
+    {
+      "id": "L-005",
+      "key": "surviving_mutant::when tests can only read source text assert the whole decision line including its comparison and boolean operators not a substring of it",
+      "text": "When tests can only read source text, assert the whole decision line including its comparison and boolean operators, not a substring of it",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "worker-binary-pinning"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M3/M5/M6 farmcortes/worker.ps1:25,42,35 (tests/test_worker.py:67,82,83) (tests)"
+      ],
+      "created": "2026-11-22T20:21:28Z",
+      "last_seen": "2026-11-22T20:21:28Z"
+    },
+    {
+      "id": "L-006",
+      "key": "surviving_mutant::when a guard must abort assert the abort statement itself not only the cleanup and message text",
+      "text": "When a guard must abort, assert the abort statement itself, not only the cleanup and message text",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "worker-binary-pinning"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M7 farmcortes/worker.ps1:44 (tests/test_worker.py:73) (tests)"
+      ],
+      "created": "2026-11-22T20:21:28Z",
+      "last_seen": "2026-11-22T20:21:28Z"
     }
   ]
 }

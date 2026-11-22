@@ -64,13 +64,22 @@ def test_worker_downloads_fixed_releases():  # BIN-01
 def test_worker_pins_official_sha256():  # BIN-02
     assert _value("YtDlpSha256") == YTDLP_SHA
     assert _value("DenoSha256") == DENO_SHA
-    assert "Get-FileHash -Algorithm SHA256" in WORKER
+    assert ASSERT_SHA256 in WORKER.replace("\r\n", "\n")
+
+
+# The whole guard: mismatch (-ne) deletes the file and aborts with the given message.
+ASSERT_SHA256 = """function Assert-Sha256($Path, $Expected, $Message) {
+    if ((Get-FileHash -Algorithm SHA256 -Path $Path).Hash -ne $Expected) {
+        Remove-Item -Force $Path
+        throw $Message
+    }
+}"""
 
 
 def test_ytdlp_hash_is_checked_before_install():  # BIN-03
     check = WORKER.index('Assert-Sha256 $temporary $YtDlpSha256 "Hash do yt-dlp nao confere"')
     assert check < WORKER.index("Move-Item -Force $temporary $YtDlp")
-    assert "Remove-Item -Force $Path" in WORKER[WORKER.index("function Assert-Sha256"):check]
+    assert WORKER.replace("\r\n", "\n").index(ASSERT_SHA256) < WORKER.replace("\r\n", "\n").index("if (-not (Test-YtDlp))")
 
 
 def test_deno_hash_is_checked_before_extraction():  # BIN-04
@@ -79,8 +88,9 @@ def test_deno_hash_is_checked_before_extraction():  # BIN-04
 
 
 def test_installed_binaries_must_report_pinned_version():  # BIN-05, BIN-06, BIN-07
-    assert '"$version".Trim() -eq $YtDlpVersion' in WORKER
-    assert '"$version" -match "^deno $([regex]::Escape($DenoVersion)) "' in WORKER
+    lines = [line.strip() for line in WORKER.splitlines()]
+    assert 'return $LASTEXITCODE -eq 0 -and "$version".Trim() -eq $YtDlpVersion' in lines
+    assert 'return $LASTEXITCODE -eq 0 -and "$version" -match "^deno $([regex]::Escape($DenoVersion)) "' in lines
     assert "if (-not (Test-YtDlp)) {\n    Remove-Item -Force -ErrorAction SilentlyContinue $YtDlp" in WORKER.replace("\r\n", "\n")
     assert "if (-not (Test-Deno)) {\n    Remove-Item -Force -ErrorAction SilentlyContinue $Deno" in WORKER.replace("\r\n", "\n")
 

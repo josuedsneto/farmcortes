@@ -38,6 +38,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: tests/test_dead_code.py:88 (tests)
 - last seen: 2026-11-22T20:06:09Z
 
+### L-005 - When tests can only read source text, assert the whole decision line including its comparison and boolean operators, not a substring of it
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: worker-binary-pinning
+- evidence: M3/M5/M6 farmcortes/worker.ps1:25,42,35 (tests/test_worker.py:67,82,83) (tests)
+- last seen: 2026-11-22T20:21:28Z
+
+### L-006 - When a guard must abort, assert the abort statement itself, not only the cleanup and message text
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `tests` · harmful: 0
+- features: worker-binary-pinning
+- evidence: M7 farmcortes/worker.ps1:44 (tests/test_worker.py:73) (tests)
+- last seen: 2026-11-22T20:21:28Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
