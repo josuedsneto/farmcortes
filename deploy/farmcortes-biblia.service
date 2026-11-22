@@ -1,0 +1,23 @@
+[Unit]
+Description=Farmcortes Biblia mode: one Bible-reading Short per run, sent to the review queue
+After=network-online.target farmcortes.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/.openclaw/workspace/farmcortes
+EnvironmentFile=-/etc/farmcortes.env
+Environment=PATH=/home/admin/.openclaw/workspace/farmcortes/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=FARMCORTES_DATA=/home/admin/.openclaw/workspace/farmcortes/data
+ExecStart=/home/admin/.openclaw/workspace/farmcortes/.venv/bin/python -m farmcortes.biblia --data-dir /home/admin/.openclaw/workspace/farmcortes/data run
+TimeoutStartSec=45min
+Nice=10
+CPUWeight=20
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/admin/.openclaw/workspace/farmcortes/data

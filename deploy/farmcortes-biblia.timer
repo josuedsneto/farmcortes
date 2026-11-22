@@ -1,0 +1,11 @@
+[Unit]
+Description=Make one Farmcortes Biblia Short at 08:00, 14:00 and 20:00 (Sao Paulo)
+
+[Timer]
+OnCalendar=*-*-* 08,14,20:00:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=5m
+Unit=farmcortes-biblia.service
+
+[Install]
+WantedBy=timers.target
