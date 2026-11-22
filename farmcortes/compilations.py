@@ -12,7 +12,6 @@ from pathlib import Path
 from .db import Database
 from .original import synthesize
 from .pipeline import PipelineError, probe, run
-from .youtube import publish_file, schedule_slots, settings as youtube_settings
 
 
 MIN_SECONDS = 1080
@@ -263,7 +262,7 @@ def _reserved_compilation_slots(data_dir: Path) -> set[str]:
     return reserved
 
 
-def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> list[dict]:
+def run_once(data_dir: Path, *, max_count: int = 1) -> list[dict]:
     database = Database(data_dir / "farmcortes.sqlite3")
     groups: dict[str, list[dict]] = {}
     for job in database.list(1000):
@@ -278,24 +277,7 @@ def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> li
         clips = select_clips(jobs)
         if sum(float(item.get("duration") or 0) for item in clips) < MIN_SECONDS:
             continue
-        video, manifest = render_compilation(data_dir, subject, jobs, clips)
-        if publish and manifest.get("publication"):
-            continue
-        if publish:
-            config = youtube_settings(data_dir)
-            reserved = {
-                item.get("publish_at")
-                for job in database.list(1000)
-                for item in job.get("publication", {}).get("items", [])
-                if item.get("publish_at")
-            } | _reserved_compilation_slots(data_dir)
-            slot = schedule_slots(1, (config["longform_time"],), config["timezone"], reserved=reserved, one_per_day=True)[0]
-            publication = publish_file(
-                video, metadata_for_compilation(manifest), token=config["token"], privacy="private",
-                publish_at=slot, short_form=False,
-            )
-            manifest["publication"] = publication
-            (video.parent / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        _, manifest = render_compilation(data_dir, subject, jobs, clips)
         results.append(manifest)
     return results
 
@@ -303,10 +285,9 @@ def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> li
 def main() -> None:
     parser = argparse.ArgumentParser(description="Produz compilações longas editoriais do Farmcortes")
     parser.add_argument("--data-dir", type=Path, default=Path(__file__).resolve().parent.parent / "data")
-    parser.add_argument("--publish", action="store_true")
     parser.add_argument("--max-count", type=int, default=1)
     args = parser.parse_args()
-    print(json.dumps(run_once(args.data_dir.resolve(), publish=args.publish, max_count=max(1, args.max_count)), ensure_ascii=False, indent=2))
+    print(json.dumps(run_once(args.data_dir.resolve(), max_count=max(1, args.max_count)), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

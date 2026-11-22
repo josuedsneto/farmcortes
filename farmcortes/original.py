@@ -11,7 +11,6 @@ from datetime import date
 from pathlib import Path
 
 from .pipeline import Caption, PipelineError, probe, run, write_ass
-from .youtube import publish_file, settings as youtube_settings
 
 
 USER_AGENT = "Farmcortes/1.0 (automated Wikimedia research; private operator)"
@@ -187,7 +186,7 @@ def metadata(story: Story, day: date) -> dict:
     }
 
 
-def generate(data_dir: Path, day: date, *, publish: bool = False) -> dict:
+def generate(data_dir: Path, day: date) -> dict:
     story = research_on_this_day(day)
     folder = data_dir / "originals" / f"{day:%Y-%m-%d}-{re.sub(r'[^a-z0-9]+', '-', story.title.casefold()).strip('-')[:42]}"
     folder.mkdir(parents=True, exist_ok=True)
@@ -205,21 +204,16 @@ def generate(data_dir: Path, day: date, *, publish: bool = False) -> dict:
         "status": "rendered", "story": asdict(story), "script": script,
         "video": str(video), "metadata": metadata(story, day), "publication": {},
     }
-    if publish:
-        config = youtube_settings(data_dir)
-        result["publication"] = publish_file(video, result["metadata"], token=config["token"], privacy=config["privacy"])
-        result["status"] = "published"
     (folder / "manifest.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Pesquisa, gera e opcionalmente publica um Short original")
+    parser = argparse.ArgumentParser(description="Pesquisa e gera um Short original")
     parser.add_argument("--date", type=date.fromisoformat, default=date.today())
     parser.add_argument("--data-dir", type=Path, default=Path(__file__).resolve().parent.parent / "data")
-    parser.add_argument("--publish", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(generate(args.data_dir.resolve(), args.date, publish=args.publish), ensure_ascii=False, indent=2))
+    print(json.dumps(generate(args.data_dir.resolve(), args.date), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -17,7 +17,6 @@ from .compilations import (
 from .db import Database
 from .editorial import load_policy
 from .pipeline import PipelineError, probe, run
-from .youtube import publish_file, schedule_slots, settings as youtube_settings
 
 
 def _is_cc_by(value: str | None) -> bool:
@@ -192,7 +191,7 @@ def metadata(manifest: dict) -> dict:
     }
 
 
-def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> list[dict]:
+def run_once(data_dir: Path, *, max_count: int = 1) -> list[dict]:
     database = Database(data_dir / "farmcortes.sqlite3")
     policy = load_policy()
     groups = select_source_groups(database.list(2000), policy, used=used_source_ids(data_dir))
@@ -200,23 +199,7 @@ def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> li
     for theme, jobs in groups.items():
         if len(results) >= max_count:
             break
-        video, manifest = render_source_compilation(data_dir, theme, jobs, policy)
-        if publish and not manifest.get("publication"):
-            config = youtube_settings(data_dir)
-            reserved = {
-                item.get("publish_at") for job in database.list(2000)
-                for item in job.get("publication", {}).get("items", []) if item.get("publish_at")
-            } | _reserved_compilation_slots(data_dir) | _reserved_source_slots(data_dir)
-            slot = schedule_slots(
-                1, (config["longform_time"],), config["timezone"], reserved=reserved, one_per_day=True,
-            )[0]
-            manifest["publication"] = publish_file(
-                video, metadata(manifest), token=config["token"], privacy="private",
-                publish_at=slot, short_form=False,
-            )
-            (video.parent / "manifest.json").write_text(
-                json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8",
-            )
+        _, manifest = render_source_compilation(data_dir, theme, jobs, policy)
         results.append(manifest)
     return results
 
@@ -224,11 +207,10 @@ def run_once(data_dir: Path, *, publish: bool = False, max_count: int = 1) -> li
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compila fontes longas temáticas do Farmcortes")
     parser.add_argument("--data-dir", type=Path, default=Path(__file__).resolve().parent.parent / "data")
-    parser.add_argument("--publish", action="store_true")
     parser.add_argument("--max-count", type=int, default=1)
     args = parser.parse_args()
     print(json.dumps(
-        run_once(args.data_dir.resolve(), publish=args.publish, max_count=max(1, args.max_count)),
+        run_once(args.data_dir.resolve(), max_count=max(1, args.max_count)),
         ensure_ascii=False, indent=2,
     ))
 
