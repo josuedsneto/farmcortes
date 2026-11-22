@@ -303,3 +303,153 @@ def test_migration_rebuilds_check_constraints_and_keeps_rows(tmp_path):
         assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE name='review_queue_pre_biblia'").fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("UPDATE review_queue SET kind='other' WHERE id=41")
+
+
+# ── ACF verse list ───────────────────────────────────────────────────────────
+
+def test_versiculos_csv_follows_acf_versification():
+    import csv
+    from collections import Counter
+    rows = list(csv.DictReader(biblia.DEFAULT_CSV.open(encoding="utf-8", newline="")))
+    keys = [(r["livro"], int(r["capitulo"]), int(r["verso"])) for r in rows]
+    assert len(rows) == 31106
+    assert len(set(keys)) == len(keys)  # no duplicates
+    assert [int(r["ordem"]) for r in rows] == list(range(1, len(rows) + 1))
+    assert keys == sorted(keys, key=lambda k: (list(biblia.BOOK_IDS).index(k[0]), k[1], k[2]))  # canonical order
+    assert list(dict.fromkeys(k[0] for k in keys)) == list(biblia.BOOK_IDS)
+    per_chapter = Counter((b, c) for b, c, _ in keys)
+    last_verse = {}
+    for b, c, v in keys:
+        last_verse[(b, c)] = max(v, last_verse.get((b, c), 0))
+    assert last_verse == dict(per_chapter)  # verses numbered 1..n, no gaps
+    john = {c: n for (b, c), n in per_chapter.items() if b == "joa"}
+    assert len(john) == 21 and sum(john.values()) == 879
+    assert sum(n for (b, _), n in per_chapter.items() if b == "jo") == 1070  # Jó
+    assert max(c for b, c in per_chapter if b == "is") == 66
+    assert max(c for b, c in per_chapter if b == "sl") == 150
+    assert sum(r["publicado_youtube"] == "true" for r in rows) == 597
+
+
+def test_import_merges_new_verses_into_an_existing_queue(tmp_path):
+    db = Database(tmp_path / "db.sqlite3")
+    biblia.import_csv(db, write_csv(tmp_path / "old.csv", [
+        (1, "gn", 1, 1, "true", "false", "false", "false"),
+        (2, "gn", 1, 3, "false", "false", "false", "false"),
+        (3, "gn", 1, 9, "false", "false", "false", "false"),   # not in the new list, no history -> deleted
+        (4, "dt", 13, 19, "true", "false", "false", "false"),  # not in the new list, published -> parked
+    ]))
+    with db.connect() as conn:
+        conn.execute("UPDATE biblia_verses SET texto='três' WHERE ordem=2")
+        conn.execute("INSERT INTO biblia_videos (review_id,ordem) VALUES (9,2)")
+    new = write_csv(tmp_path / "new.csv", [
+        (1, "gn", 1, 1, "false", "false", "false", "false"),
+        (2, "gn", 1, 2, "false", "false", "false", "false"),
+        (3, "gn", 1, 3, "false", "false", "false", "false"),
+        (4, "joa", 1, 1, "false", "false", "false", "false"),
+    ])
+    assert biblia.import_csv(db, new) == 2
+    assert biblia.import_csv(db, new) == 0
+    with db.connect() as conn:
+        rows = {(r["livro"], r["capitulo"], r["verso"]): dict(r) for r in conn.execute("SELECT * FROM biblia_verses")}
+        videos = [tuple(r) for r in conn.execute("SELECT review_id,ordem FROM biblia_videos")]
+    assert rows[("gn", 1, 1)]["published_youtube"] == 1  # DB state wins over the CSV
+    assert rows[("gn", 1, 3)]["ordem"] == 3 and rows[("gn", 1, 3)]["texto"] == "três"
+    assert videos == [(9, 3)]
+    assert ("gn", 1, 9) not in rows
+    assert rows[("dt", 13, 19)]["ordem"] == -4
+    assert rows[("joa", 1, 1)]["ordem"] == 4 and rows[("joa", 1, 1)]["published_youtube"] == 0
+    plan = biblia.next_video(db, fetch=fake_fetch({1: {2: "dois", 3: "três"}}))
+    assert [v["ordem"] for v in plan["verses"]] == [2, 3]
+
+
+def test_verse_missing_from_the_api_is_skipped_not_blocking(tmp_path):
+    db = Database(tmp_path / "db.sqlite3")
+    biblia.import_csv(db, write_csv(tmp_path / "v.csv", [(1, "dt", 12, 32, "false", "false", "false", "false"), (2, "dt", 13, 1, "false", "false", "false", "false")]))
+    plan = biblia.next_video(db, fetch=fake_fetch({12: {31: "x"}, 13: {1: "Tudo o que eu te ordeno."}}))
+    assert [v["ordem"] for v in plan["verses"]] == [2]
+    with db.connect() as conn:
+        assert conn.execute("SELECT parts_total FROM biblia_verses WHERE ordem=1").fetchone()[0] == 0
+
+
+# ── TikTok and Instagram ─────────────────────────────────────────────────────
+
+def test_tiktok_posts_only_approved_biblia_items_and_marks_verses(tmp_path, monkeypatch):
+    from farmcortes.social import tiktok
+    db = Database(tmp_path / "db")
+    pending = add_biblia(db, tmp_path)
+    approved = add_biblia(db, tmp_path)
+    review.decide(approved, 2, db)
+    monkeypatch.setattr(tiktok, "is_configured", lambda: False)
+    assert review.publish_social(db) == []  # no TikTok env/token -> off
+    monkeypatch.setattr(tiktok, "is_configured", lambda: True)
+    calls = []
+    monkeypatch.setattr(tiktok, "upload_draft", lambda video, caption, **kw: calls.append((caption, kw)) or {"publish_id": "p1", "mode": "draft"})
+    review.publish_social(db)
+    review.publish_social(db)
+    assert calls == [("t2 #Bíblia", {"direct_post": False, "privacy_level": "SELF_ONLY"})]
+    rows = {row["id"]: row for row in review.list_items(db)}
+    assert json.loads(rows[approved]["social_json"])["tiktok"]["id"] == "p1"
+    assert json.loads(rows[pending]["social_json"]) == {}
+    with db.connect() as conn:
+        assert conn.execute("SELECT published_tiktok FROM biblia_verses WHERE ordem=1").fetchone()[0] == 1
+
+
+def test_tiktok_private_mode_uses_direct_post_self_only(tmp_path, monkeypatch):
+    from farmcortes.social import tiktok
+    monkeypatch.setenv("FARMCORTES_TIKTOK_MODE", "private")
+    calls = []
+    monkeypatch.setattr(tiktok, "upload_draft", lambda video, caption, **kw: calls.append(kw) or {"publish_id": "p", "mode": "direct_post"})
+    assert review._publish_tiktok(tmp_path / "v.mp4", "c")["mode"] == "direct_post"
+    assert calls == [{"direct_post": True, "privacy_level": "SELF_ONLY"}]
+
+
+def test_tiktok_upload_uses_the_content_posting_endpoints(tmp_path, monkeypatch):
+    from farmcortes.social import tiktok
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"0" * 1000)
+    monkeypatch.setattr(tiktok, "get_valid_token", lambda: "tok")
+    posts, puts = [], []
+
+    class Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"data": {"upload_url": "https://up", "publish_id": "pub"}, "error": {"code": "ok"}}
+    monkeypatch.setattr(tiktok.requests, "post", lambda url, **kw: posts.append((url, kw["json"])) or Response())
+    monkeypatch.setattr(tiktok.requests, "put", lambda url, **kw: puts.append(kw["headers"]) or type("R", (), {"status_code": 201})())
+    assert tiktok.upload_draft(video, "c")["status"] == "draft_created"
+    assert tiktok.upload_draft(video, "c", direct_post=True)["privacy_level"] == "SELF_ONLY"
+    assert posts[0][0].endswith("/post/publish/inbox/video/init/") and "post_info" not in posts[0][1]
+    assert posts[1][0].endswith("/post/publish/video/init/") and posts[1][1]["post_info"]["privacy_level"] == "SELF_ONLY"
+    assert posts[0][1]["source_info"] == {"source": "FILE_UPLOAD", "video_size": 1000, "chunk_size": 1000, "total_chunk_count": 1}
+    assert puts[0]["Content-Range"] == "bytes 0-999/1000"
+
+
+def test_instagram_reel_flow_uploads_waits_and_publishes(tmp_path, monkeypatch):
+    from farmcortes.social import meta
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"0" * 10)
+    monkeypatch.setenv("FARMCORTES_META_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("FARMCORTES_INSTAGRAM_USER_ID", "ig")
+    statuses = iter(["IN_PROGRESS", "FINISHED"])
+    calls = []
+
+    def respond(payload):
+        return type("R", (), {"status_code": 200, "content": b"x", "text": "", "json": lambda self: payload})()
+
+    def post(url, data=None, headers=None, timeout=None, **kw):
+        calls.append(("post", url, headers))
+        if url.endswith("/ig/media"):
+            assert data["media_type"] == "REELS" and data["upload_type"] == "resumable"
+            return respond({"id": "c1", "uri": "https://rupload.facebook.com/ig-api-upload/v21.0/c1"})
+        if url.endswith("/media_publish"):
+            return respond({"id": "post1"})
+        return respond({"success": True})
+    monkeypatch.setattr(meta.requests, "post", post)
+    monkeypatch.setattr(meta.requests, "get", lambda url, **kw: calls.append(("get", url, None)) or respond({"status_code": next(statuses)}))
+    monkeypatch.setattr(meta.time, "sleep", lambda s: None)
+    assert meta.publish("instagram", video, "Título", "Descrição") == {"platform": "instagram", "id": "post1"}
+    upload = next(c for c in calls if "rupload" in c[1])
+    assert upload[2]["Authorization"] == "OAuth tok" and upload[2]["file_size"] == "10"
+    assert [c[0] for c in calls].count("get") == 2 and calls[-1][1].endswith("/ig/media_publish")
