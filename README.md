@@ -92,8 +92,14 @@ o mesmo token e a mesma fila de revisão dos cortes:
    legendas. A descrição ganha "Conheça o Bibliagram" (+ `FARMCORTES_BIBLIA_APP_URL`).
    Cada vídeo registra o CTA usado em `biblia_cta_uses`. Sem pasta ou pasta vazia,
    o vídeo sai sem CTA.
-5. Narração Piper, fundo do Pexels (reserva: Pixabay; sem chave: fundo liso),
-   música opcional do Jamendo e render FFmpeg 1080x1920. Os créditos da imagem e
+5. Narração com edge-tts (voz `pt-BR-AntonioNeural`, a mesma do Biblia, ritmo e
+   tom padrão; `FARMCORTES_BIBLIA_TTS`/`FARMCORTES_BIBLIA_VOICE`) e legendas
+   sincronizadas pelos tempos de cada palavra, quebradas na pontuação. Atenção: o
+   edge-tts usa um endpoint não oficial do Microsoft Edge, que pode mudar ou ser
+   bloqueado sem aviso; por isso, se ele falhar, a narração cai sozinha para o Piper
+   local e a execução continua. Fundo do Pexels (reserva: Pixabay; sem chave: fundo liso),
+   música opcional do Jamendo e render FFmpeg 1080x1920 (o fundo sempre cobre a
+   tela; faixas quase pretas no alto ou embaixo da foto são cortadas antes). Os créditos da imagem e
    da música entram na descrição. Os arquivos temporários são apagados após o
    render; o MP4 é apagado depois de publicado em todas as plataformas ligadas.
 6. Títulos e descrição por IA (Groq; Gemini de reserva), com cache na tabela
