@@ -86,3 +86,27 @@ def test_batch_and_live_share_the_conversion(tmp_path, monkeypatch):  # DEAD-03
         assert live.LiveTranscriber()(tmp_path / "b.ts", tmp_path / "b.srt") == expected
     sources = [p for p in (pipeline.__file__, live.__file__)]
     assert sum(open(p, encoding="utf-8").read().count(">= 3.3") for p in sources) == 1
+
+
+def test_punctuation_closes_group_mid_segment():  # DEAD-04 (rule independent of segment end)
+    words = [word("Oi.", 0.0, 0.4), word(" tudo", 0.4, 0.8), word(" bem", 0.8, 1.2)]
+    assert captions_from_segments([segment(0.0, 1.2, words=words)]) == [
+        Caption(0.0, 0.4, "Oi."), Caption(0.4, 1.2, "tudo bem"),
+    ]
+
+
+def test_group_closes_exactly_at_3_3_seconds():  # DEAD-05 (boundary is >= 3.3)
+    words = [word(" a", 0, 1), word(" b", 1, 2), word(" c", 2, 3.3), word(" d", 3.3, 3.5)]
+    assert captions_from_segments([segment(0, 3.5, words=words)]) == [
+        Caption(0, 3.3, "a b c"), Caption(3.3, 3.5, "d"),
+    ]
+
+
+def test_group_below_3_3_seconds_stays_open():  # DEAD-05 (no early split)
+    words = [word(" a", 0, 1.6), word(" b", 1.6, 3.2), word(" c", 3.2, 3.25)]
+    assert captions_from_segments([segment(0, 3.25, words=words)]) == [Caption(0, 3.25, "a b c")]
+
+
+def test_glossary_is_applied_to_wordless_segment(monkeypatch):  # DEAD-08 (text path)
+    monkeypatch.setattr(pipeline, "caption_glossary", lambda: {"farm cortes": "Farmcortes"})
+    assert captions_from_segments([segment(1, 2, text=" farm cortes ")]) == [Caption(1, 2, "Farmcortes")]
