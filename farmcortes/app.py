@@ -445,10 +445,10 @@ async def live_lifespan(_: FastAPI):
 app.include_router(APIRouter(lifespan=live_lifespan))
 
 @app.get('/api/review')
-def review_list(request: Request):
+def review_list(request: Request, kind: str | None = None):
     require_worker(request)
     from . import review
-    return review.list_items(DB)
+    return review.list_items(DB, kind=kind)
 
 class ReviewDecision(BaseModel):
     id: int

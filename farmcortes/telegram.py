@@ -35,7 +35,7 @@ def send_preview(item, data_dir=None):
         return False
     token, chat = cfg
     titles = json.loads(item['titles_json'])
-    caption = (('[TESTE] ' if item['is_test'] else '') + f"{item['streamer']} — {item['category']}\n" + '\n'.join(f'{i}. {t}' for i,t in enumerate(titles, 1)))[:1024]
+    caption = (('[TESTE] ' if item['is_test'] else '') + ('[BÍBLIA] ' if item.get('kind') == 'biblia' else '') + f"{item['streamer']} — {item['category']}\n" + '\n'.join(f'{i}. {t}' for i,t in enumerate(titles, 1)))[:1024]
     keyboard = {'inline_keyboard': [[{'text': f'Título {i}', 'callback_data': f"fc:{item['id']}:{i}"} for i in range(1,4)] + [{'text': 'Descartar', 'callback_data': f"fc:{item['id']}:x"}]]}
     path = Path(item['file_path'])
     with tempfile.TemporaryDirectory() as tmp:
