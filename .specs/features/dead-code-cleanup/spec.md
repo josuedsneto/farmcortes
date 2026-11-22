@@ -79,15 +79,15 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| DEAD-01 | P1: Remover stubs (AC1) | Execute | Implementing |
-| DEAD-02 | P1: Remover stubs (AC2) | Execute | Implementing |
-| DEAD-03 | P1: Conversão única (AC1) | Execute | Implementing |
-| DEAD-04 | P1: Conversão única (AC2) | Execute | Implementing |
-| DEAD-05 | P1: Conversão única (AC3) | Execute | Implementing |
-| DEAD-06 | P1: Conversão única (AC4) | Execute | Implementing |
-| DEAD-07 | P1: Conversão única (AC5) | Execute | Implementing |
-| DEAD-08 | P1: Conversão única (AC6) | Execute | Implementing |
-| DEAD-09 | Edge: lista vazia | Execute | Implementing |
+| DEAD-01 | P1: Remover stubs (AC1) | Execute | Verified |
+| DEAD-02 | P1: Remover stubs (AC2) | Execute | Verified |
+| DEAD-03 | P1: Conversão única (AC1) | Execute | Verified |
+| DEAD-04 | P1: Conversão única (AC2) | Execute | Verified |
+| DEAD-05 | P1: Conversão única (AC3) | Execute | Verified |
+| DEAD-06 | P1: Conversão única (AC4) | Execute | Verified |
+| DEAD-07 | P1: Conversão única (AC5) | Execute | Verified |
+| DEAD-08 | P1: Conversão única (AC6) | Execute | Verified |
+| DEAD-09 | Edge: lista vazia | Execute | Verified |
 
 **Coverage:** 9 total; Tasks pulado (3 arquivos de código + 1 teste).
 
