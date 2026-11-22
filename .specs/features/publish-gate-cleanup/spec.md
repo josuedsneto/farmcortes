@@ -101,13 +101,13 @@
 | PUB-01 | P1: Jobs sem publicar (AC1) | Execute | Implementing |
 | PUB-02 | P1: Jobs sem publicar (AC2) | Execute | Implementing |
 | PUB-03 | P1: Jobs sem publicar (AC3) | Execute | Implementing |
-| PUB-04 | P1: Único caminho (AC1) | Execute | Pending |
+| PUB-04 | P1: Único caminho (AC1) | Execute | Implementing |
 | PUB-05 | P1: Único caminho (AC2) | Execute | Implementing |
-| PUB-06 | P1: Único caminho (AC3) | Execute | Pending |
-| PUB-07 | P1: Único caminho (AC4) | Execute | Pending |
-| PUB-08 | P1: Único caminho (AC5) | Execute | Pending |
+| PUB-06 | P1: Único caminho (AC3) | Execute | Implementing |
+| PUB-07 | P1: Único caminho (AC4) | Execute | Implementing |
+| PUB-08 | P1: Único caminho (AC5) | Execute | Implementing |
 | PUB-09 | P2: Documentação (AC1) | Execute | Pending |
-| PUB-10 | Edge: manifesto antigo | Execute | Pending |
+| PUB-10 | Edge: manifesto antigo | Execute | Implementing |
 
 **Coverage:** 10 total; `tasks.md` será criado no Execute se a listagem passar de 5 passos.
 

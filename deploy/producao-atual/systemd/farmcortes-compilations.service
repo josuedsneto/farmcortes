@@ -12,7 +12,7 @@ Environment=PATH=/home/admin/.openclaw/workspace/farmcortes/.venv/bin:/usr/local
 Environment=FARMCORTES_DATA=/home/admin/.openclaw/workspace/farmcortes/data
 Environment=FARMCORTES_YOUTUBE_ENABLED=true
 Environment=FARMCORTES_YOUTUBE_TOKEN=/home/admin/.openclaw/workspace/farmcortes/data/secrets/youtube-token.json
-ExecStart=/home/admin/.openclaw/workspace/farmcortes/.venv/bin/python -m farmcortes.source_compilations --data-dir /home/admin/.openclaw/workspace/farmcortes/data --publish --max-count 1
+ExecStart=/home/admin/.openclaw/workspace/farmcortes/.venv/bin/python -m farmcortes.source_compilations --data-dir /home/admin/.openclaw/workspace/farmcortes/data --max-count 1
 Nice=10
 CPUWeight=20
 NoNewPrivileges=true

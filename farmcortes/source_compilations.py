@@ -10,7 +10,6 @@ from pathlib import Path
 from .compilations import (
     _escape,
     _narration_segment,
-    _reserved_compilation_slots,
     _slug,
     editorial_outline,
 )
@@ -34,19 +33,6 @@ def used_source_ids(data_dir: Path) -> set[str]:
         if manifest.get("publication", {}).get("video_id"):
             used.update(str(item["job_id"]) for item in manifest.get("sources", []) if item.get("job_id"))
     return used
-
-
-def _reserved_source_slots(data_dir: Path) -> set[str]:
-    reserved: set[str] = set()
-    for manifest_path in (data_dir / "source-compilations").glob("*/*/manifest.json"):
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        publish_at = manifest.get("publication", {}).get("publish_at")
-        if publish_at:
-            reserved.add(publish_at)
-    return reserved
 
 
 def select_source_groups(jobs: list[dict], policy: dict, *, used: set[str] | None = None) -> dict[str, list[dict]]:

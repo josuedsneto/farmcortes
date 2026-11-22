@@ -249,19 +249,6 @@ def metadata_for_compilation(manifest: dict) -> dict:
     }
 
 
-def _reserved_compilation_slots(data_dir: Path) -> set[str]:
-    reserved: set[str] = set()
-    for manifest_path in (data_dir / "compilations").glob("*/*/manifest.json"):
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        publish_at = manifest.get("publication", {}).get("publish_at")
-        if publish_at:
-            reserved.add(publish_at)
-    return reserved
-
-
 def run_once(data_dir: Path, *, max_count: int = 1) -> list[dict]:
     database = Database(data_dir / "farmcortes.sqlite3")
     groups: dict[str, list[dict]] = {}
