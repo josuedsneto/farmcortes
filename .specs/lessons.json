@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 5,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "surviving_mutant::test each grouping trigger with input where it is not also the end of the sequence so a trailing flush cannot mask it",
+      "text": "Test each grouping trigger with input where it is not also the end of the sequence, so a trailing flush cannot mask it",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "dead-code-cleanup"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M10 farmcortes/pipeline.py:222 (tests)"
+      ],
+      "created": "2026-11-22T20:06:08Z",
+      "last_seen": "2026-11-22T20:06:08Z"
+    },
+    {
+      "id": "L-002",
+      "key": "surviving_mutant::test numeric thresholds at the exact boundary and just below it not only with an overshoot",
+      "text": "Test numeric thresholds at the exact boundary and just below it, not only with an overshoot",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "dead-code-cleanup"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M12/M13 farmcortes/pipeline.py:222 (tests)"
+      ],
+      "created": "2026-11-22T20:06:08Z",
+      "last_seen": "2026-11-22T20:06:08Z"
+    },
+    {
+      "id": "L-003",
+      "key": "surviving_mutant::when a transformation must apply on every branch assert it on each branch",
+      "text": "When a transformation must apply on every branch, assert it on each branch",
+      "signal": "surviving_mutant",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "dead-code-cleanup"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "M5 farmcortes/pipeline.py:234 (tests)"
+      ],
+      "created": "2026-11-22T20:06:08Z",
+      "last_seen": "2026-11-22T20:06:08Z"
+    },
+    {
+      "id": "L-004",
+      "key": "spec_precision_gap::prove deduplication behaviorally not by counting source text literals that mask behavioral mutants",
+      "text": "Prove deduplication behaviorally, not by counting source-text literals that mask behavioral mutants",
+      "signal": "spec_precision_gap",
+      "scope": "tests",
+      "status": "candidate",
+      "features": [
+        "dead-code-cleanup"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "tests/test_dead_code.py:88 (tests)"
+      ],
+      "created": "2026-11-22T20:06:09Z",
+      "last_seen": "2026-11-22T20:06:09Z"
+    }
+  ]
+}

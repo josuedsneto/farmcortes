@@ -98,16 +98,16 @@
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PUB-01 | P1: Jobs sem publicar (AC1) | Execute | Implementing |
-| PUB-02 | P1: Jobs sem publicar (AC2) | Execute | Implementing |
-| PUB-03 | P1: Jobs sem publicar (AC3) | Execute | Implementing |
-| PUB-04 | P1: Único caminho (AC1) | Execute | Implementing |
-| PUB-05 | P1: Único caminho (AC2) | Execute | Implementing |
-| PUB-06 | P1: Único caminho (AC3) | Execute | Implementing |
-| PUB-07 | P1: Único caminho (AC4) | Execute | Implementing |
-| PUB-08 | P1: Único caminho (AC5) | Execute | Implementing |
-| PUB-09 | P2: Documentação (AC1) | Execute | Implementing |
-| PUB-10 | Edge: manifesto antigo | Execute | Implementing |
+| PUB-01 | P1: Jobs sem publicar (AC1) | Execute | Verified |
+| PUB-02 | P1: Jobs sem publicar (AC2) | Execute | Verified |
+| PUB-03 | P1: Jobs sem publicar (AC3) | Execute | Verified |
+| PUB-04 | P1: Único caminho (AC1) | Execute | Verified |
+| PUB-05 | P1: Único caminho (AC2) | Execute | Verified |
+| PUB-06 | P1: Único caminho (AC3) | Execute | Verified |
+| PUB-07 | P1: Único caminho (AC4) | Execute | Verified |
+| PUB-08 | P1: Único caminho (AC5) | Execute | Verified |
+| PUB-09 | P2: Documentação (AC1) | Execute | Verified |
+| PUB-10 | Edge: manifesto antigo | Execute | Verified |
 
 **Coverage:** 10 total; `tasks.md` será criado no Execute se a listagem passar de 5 passos.
 
