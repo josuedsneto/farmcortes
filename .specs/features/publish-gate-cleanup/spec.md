@@ -106,7 +106,7 @@
 | PUB-06 | P1: Único caminho (AC3) | Execute | Implementing |
 | PUB-07 | P1: Único caminho (AC4) | Execute | Implementing |
 | PUB-08 | P1: Único caminho (AC5) | Execute | Implementing |
-| PUB-09 | P2: Documentação (AC1) | Execute | Pending |
+| PUB-09 | P2: Documentação (AC1) | Execute | Implementing |
 | PUB-10 | Edge: manifesto antigo | Execute | Implementing |
 
 **Coverage:** 10 total; `tasks.md` será criado no Execute se a listagem passar de 5 passos.

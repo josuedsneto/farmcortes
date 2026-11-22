@@ -12,7 +12,7 @@ serviços pagos.
 4. Um seletor determinístico encontra trechos completos e não sobrepostos.
 5. FFmpeg renderiza 1080x1920, normaliza o áudio e grava as legendas por último.
 6. Todos os vídeos recebem uma chamada visual clara para inscrição; cortes com 24 segundos ou mais repetem o CTA perto do encerramento.
-7. Quando habilitado, todos os cortes são enviados como privados e agendados nos próximos horários editoriais livres pela API oficial.
+7. O job termina como "Cortes prontos para revisão"; nada é publicado sem aprovação (veja Publicação no YouTube).
 
 A interface permite cortes de até 3 minutos, limite atual dos Shorts verticais,
 e duração mínima de até 1 minuto e 30 segundos para realmente forçar cortes
@@ -35,13 +35,13 @@ material e quanta narração original ainda faltam.
 
 ## Compilações longas editoriais
 
-`python -m farmcortes.source_compilations --publish` trabalha diretamente com
+`python -m farmcortes.source_compilations` trabalha diretamente com
 as fontes longas originais, não com os Shorts já renderizados. A rotina exige ao
 menos três vídeos CC BY do mesmo tema e 30 minutos úteis, mira aproximadamente
 uma hora e usa até 20 minutos de cada fonte. Um modelo local escreve abertura e
 contextos com base no próprio material, o Piper gera a narração em português e
 o FFmpeg normaliza os capítulos, mostra a atribuição e inclui chamadas de
-inscrição. Apenas uma nova compilação é gerada por execução.
+inscrição. Apenas uma nova compilação é gerada por execução; a rotina só renderiza, não publica.
 
 Esse tratamento reduz o risco de conteúdo repetitivo, mas não garante entrada
 ou permanência no Programa de Parcerias do YouTube; direitos autorais,
@@ -53,30 +53,33 @@ mesmo ambiente. Quando o YouTube bloqueia a VPS com verificação anti-robô, o
 usuário pode usar o link compartilhável do original no Google Drive ou Dropbox;
 o sistema não usa cookies pessoais, proxies ou serviços pagos para contornar a restrição.
 
-## Short original: pesquisa até a postagem
+## Short original: pesquisa até o vídeo pronto
 
 O modo original evita baixar vídeos de terceiros. Ele pesquisa um fato histórico
 do dia na Wikimedia, escolhe uma pauta com imagem aberta, monta o roteiro,
-produz narração pt-BR local com Piper, renderiza em 1080x1920 com créditos e
-publica pela mesma integração oficial do YouTube.
+produz narração pt-BR local com Piper e renderiza em 1080x1920 com créditos.
+O comando só renderiza; não publica.
 
 ```bash
-.venv/bin/python -m farmcortes.original --date 2026-11-06        # somente renderiza
-.venv/bin/python -m farmcortes.original --date 2026-11-06 --publish
+.venv/bin/python -m farmcortes.original --date 2026-11-06
 ```
 
 O modelo de voz deve existir em
 `data/models/pt_BR-edresson-low.onnx` (com o JSON de configuração ao lado).
 
-## Publicação automática no YouTube
+## Publicação no YouTube
+
+A publicação ocorre só depois de aprovação na fila de revisão (`review_queue`).
+Cada item recebe uma prévia no Telegram com três opções de título; o botão
+escolhido aprova o item (`python -m farmcortes.telegram --poll`) e
+`python -m farmcortes.review` (`review.publish_approved`) envia os aprovados pela
+API oficial. Cortes de jobs, Shorts originais e compilações não são publicados
+automaticamente.
 
 Configure `FARMCORTES_YOUTUBE_ENABLED=true`, `FARMCORTES_YOUTUBE_TOKEN` com o
-token OAuth renovável e `FARMCORTES_YOUTUBE_PRIVACY` (`private`, `unlisted` ou
-`public`). Defina os horários com `FARMCORTES_YOUTUBE_SCHEDULE_TIMES` (por exemplo,
-`12:00,18:00,21:00`) e o fuso com `FARMCORTES_YOUTUBE_TIMEZONE` (padrão:
-`America/Sao_Paulo`). O corte de maior pontuação ocupa o próximo horário livre;
-os demais ficam espaçados, no máximo um corte da mesma fonte por dia, e todos os
-links ficam registrados no job.
+token OAuth renovável, `FARMCORTES_YOUTUBE_PRIVACY` (`private`, `unlisted` ou
+`public`) e `FARMCORTES_DAILY_UPLOAD_LIMIT`. Só são publicados itens de
+streamers aprovados em `data/streamers.json`.
 
 ## Varredura diária de fontes
 

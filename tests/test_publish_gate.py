@@ -134,3 +134,11 @@ def test_old_compilation_manifest_is_left_untouched(tmp_path, monkeypatch, youtu
 
     assert results == [old]
     assert json.loads(manifest_path.read_text(encoding="utf-8")) == old
+
+
+def test_readme_describes_review_only_publishing():  # PUB-09
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "--publish" not in readme
+    assert "agendados nos próximos horários" not in readme
+    assert "A publicação ocorre só depois de aprovação na fila de revisão" in readme
+    assert "review.publish_approved" in readme
