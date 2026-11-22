@@ -83,14 +83,23 @@ o mesmo token e a mesma fila de revisão dos cortes:
    por chamada, e fica guardado no banco.
 3. Versículos seguidos se juntam até ~57 s de narração; um versículo longo vira
    partes de no máximo 60 s, uma por execução, com "Parte X/N" no título e na tela.
-4. Narração Piper, fundo do Pexels (reserva: Pixabay; sem chave: fundo liso),
+4. Ao final de cada vídeo entra um CTA do app Bibliagram (MP4 da pasta
+   `FARMCORTES_BIBLIA_CTA_DIR`, padrão `data/cta`), em rodízio pelo menos usado
+   recentemente, com arquivos idênticos contados uma vez e
+   `FARMCORTES_BIBLIA_CTA_EXCLUDE` para aposentar CTAs datados. A duração do CTA sai
+   do orçamento da leitura, então o vídeo inteiro fica em até 60 s; o CTA é
+   normalizado (1080x1920, 30 fps, SAR 1, 48 kHz estéreo, -16 LUFS) e fica sem
+   legendas. A descrição ganha "Conheça o Bibliagram" (+ `FARMCORTES_BIBLIA_APP_URL`).
+   Cada vídeo registra o CTA usado em `biblia_cta_uses`. Sem pasta ou pasta vazia,
+   o vídeo sai sem CTA.
+5. Narração Piper, fundo do Pexels (reserva: Pixabay; sem chave: fundo liso),
    música opcional do Jamendo e render FFmpeg 1080x1920. Os créditos da imagem e
    da música entram na descrição. Os arquivos temporários são apagados após o
    render; o MP4 é apagado depois de publicado em todas as plataformas ligadas.
-5. Títulos e descrição por IA (Groq; Gemini de reserva), com cache na tabela
+6. Títulos e descrição por IA (Groq; Gemini de reserva), com cache na tabela
    `ai_cache`. Sem chave, ou se a IA falhar, usa títulos de modelo, então a
    execução não falha por causa da IA.
-6. O vídeo entra em `review_queue` com `kind='biblia'` e categoria `Bíblia`
+7. O vídeo entra em `review_queue` com `kind='biblia'` e categoria `Bíblia`
    (prévia no Telegram marcada com `[BÍBLIA]`; `GET /api/review?kind=biblia`
    filtra só esses itens).
 
