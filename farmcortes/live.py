@@ -30,7 +30,7 @@ from urllib.parse import urlparse
 
 from .db import Database
 from .pipeline import (
-    Caption, PipelineError, YOUTUBE_HOSTS, apply_caption_glossary,
+    Caption, PipelineError, YOUTUBE_HOSTS, captions_from_segments,
     output_records, probe, render, run, select_candidates, write_srt,
 )
 
@@ -124,20 +124,7 @@ class LiveTranscriber:
         )
         if float(getattr(info, "language_probability", 1) or 0) < .55:
             return []
-        captions = []
-        for segment in segments:
-            words = list(segment.words or [])
-            if not words:
-                captions.append(Caption(segment.start, segment.end, apply_caption_glossary(segment.text.strip())))
-                continue
-            bucket = []
-            for word in words:
-                bucket.append(word)
-                if word.end - bucket[0].start >= 3.3 or word.word.strip().endswith((".", "!", "?")):
-                    captions.append(Caption(bucket[0].start, word.end, apply_caption_glossary("".join(w.word for w in bucket).strip())))
-                    bucket = []
-            if bucket:
-                captions.append(Caption(bucket[0].start, bucket[-1].end, apply_caption_glossary("".join(w.word for w in bucket).strip())))
+        captions = captions_from_segments(segments)
         write_srt(captions, subtitle)
         return captions
 

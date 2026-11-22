@@ -81,13 +81,13 @@
 | -------------- | ----- | ----- | ------ |
 | DEAD-01 | P1: Remover stubs (AC1) | Execute | Implementing |
 | DEAD-02 | P1: Remover stubs (AC2) | Execute | Implementing |
-| DEAD-03 | P1: Conversão única (AC1) | Execute | Pending |
-| DEAD-04 | P1: Conversão única (AC2) | Execute | Pending |
-| DEAD-05 | P1: Conversão única (AC3) | Execute | Pending |
-| DEAD-06 | P1: Conversão única (AC4) | Execute | Pending |
-| DEAD-07 | P1: Conversão única (AC5) | Execute | Pending |
-| DEAD-08 | P1: Conversão única (AC6) | Execute | Pending |
-| DEAD-09 | Edge: lista vazia | Execute | Pending |
+| DEAD-03 | P1: Conversão única (AC1) | Execute | Implementing |
+| DEAD-04 | P1: Conversão única (AC2) | Execute | Implementing |
+| DEAD-05 | P1: Conversão única (AC3) | Execute | Implementing |
+| DEAD-06 | P1: Conversão única (AC4) | Execute | Implementing |
+| DEAD-07 | P1: Conversão única (AC5) | Execute | Implementing |
+| DEAD-08 | P1: Conversão única (AC6) | Execute | Implementing |
+| DEAD-09 | Edge: lista vazia | Execute | Implementing |
 
 **Coverage:** 9 total; Tasks pulado (3 arquivos de código + 1 teste).
 

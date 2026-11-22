@@ -204,6 +204,13 @@ def transcribe(source: Path, output: Path, *, context: str | None = None) -> lis
     )
     if float(getattr(info, "language_probability", 1.0) or 0) < 0.55:
         raise PipelineError("O áudio não pôde ser reconhecido com confiança suficiente em português")
+    captions = captions_from_segments(segments)
+    write_srt(captions, output)
+    return captions
+
+
+def captions_from_segments(segments) -> list[Caption]:
+    """Group faster-whisper words into captions of up to ~3.3 s or one sentence."""
     captions: list[Caption] = []
     for segment in segments:
         words = list(segment.words or [])
@@ -225,7 +232,6 @@ def transcribe(source: Path, output: Path, *, context: str | None = None) -> lis
                 ))
         elif segment.text.strip():
             captions.append(Caption(segment.start, segment.end, apply_caption_glossary(segment.text.strip())))
-    write_srt(captions, output)
     return captions
 
 
