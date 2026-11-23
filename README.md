@@ -69,6 +69,8 @@ O modelo de voz deve existir em
 
 ## Modo Bíblia: leitura da Bíblia em Shorts
 
+Configuração e operação passo a passo: [`docs/biblia.md`](docs/biblia.md).
+
 Gera um Short vertical por execução com a leitura sequencial da Bíblia (plano
 "Leia a Bíblia Toda em Um Ano", trazido do projeto Biblia). Usa o mesmo canal,
 o mesmo token e a mesma fila de revisão dos cortes:
